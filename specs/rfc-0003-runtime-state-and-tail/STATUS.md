@@ -16,6 +16,8 @@ updated: 2026-05-02
 
 All rfc-0003 workstreams are validated. Runtime state, status/tail CLI, inspect/plan refinement, and documentation validation are ready for review.
 
+Supersession note: `rfc-0004-explicit-plan-orchestrator-boundary` supersedes the runtime-owned inspect/heuristic plan direction from workstream `03-inspect-plan`. Interactive Codex plus the skill now own repository discovery, planning, workstream splitting, review, and user interaction. Durable run state, status, tail, event logs, and `.dispatch/runs/` remain useful foundations.
+
 ## Workstreams
 
 | ID | Scope | Status | Owner | Branch / PR | Depends on | Updated |
@@ -36,3 +38,4 @@ All rfc-0003 workstreams are validated. Runtime state, status/tail CLI, inspect/
 - 2026-05-02 codex-worker: validated `03-inspect-plan`; TDD inspect/plan tests, full unittest discovery, and Python 3 CLI smokes pass.
 - 2026-05-02 codex-worker: claimed `04-docs-validation` on main.
 - 2026-05-02 codex-worker: validated `04-docs-validation`; event protocol reference and README examples updated, full Python 3 CLI smokes and unittest discovery pass, manual `.dispatch` ignore/staging checks pass, and generated state/cache cleanup complete.
+- 2026-05-02 codex-worker-a: added rfc-0004 supersession detail; rfc-0003 inspect/plan entries are historical only.

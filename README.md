@@ -10,7 +10,9 @@ Repo-native agent dispatch, with adult supervision.
 
 Dispatch Engine is a runtime-backed Codex skill. The repository root is the installable skill directory, and the local runtime is bundled under `scripts/` so the whole project can be copied or cloned into a Codex skills directory.
 
-The runtime reads a repository's own planning conventions, turns work into schedulable agent workstreams, dispatches worker and reviewer agents serially or in parallel, and keeps progress reviewable.
+Interactive Codex reads a repository's own planning conventions, turns work into an explicit dispatch plan, reviews results, and keeps the user in the loop. The runtime imports that explicit plan, stores durable `.dispatch/` state, exposes status/tail readers, and is the future home of the mechanical scheduler, worker, reviewer, and validation loop.
+
+Dispatch Engine-generated non-project runtime content belongs under `.dispatch/` in the target repository. Project files changed for the user's objective stay in the target repository's normal source, test, docs, spec, or configuration paths.
 
 ## Skill Layout
 
@@ -29,8 +31,6 @@ Basic smoke checks:
 ```bash
 python3 scripts/de.py --help
 python3 scripts/de.py version
-python3 scripts/de.py inspect .
-python3 scripts/de.py plan . --objective "smoke test objective"
 python3 scripts/de.py status .
 python3 scripts/de.py tail .
 ```
@@ -39,8 +39,9 @@ python3 scripts/de.py tail .
 
 - Respect target repository conventions instead of prescribing a universal spec format.
 - Keep orchestration state explicit, resumable, and reviewable.
-- Use interactive agents as supervisors and operators, not as hidden long-running runtimes.
-- Support pluggable adapters for planning sources, status sinks, validation commands, and worker agents.
+- Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
+- Use the runtime for explicit plan import, `.dispatch/` state, event logs, status/tail, and future mechanical orchestration.
+- Support pluggable adapters for worker agents, reviewer agents, validation runners, and status sinks.
 - Keep the runnable runtime bundled inside the skill directory before recommending copy/clone installation.
 
 This repository is intentionally small while the project shape is being designed.

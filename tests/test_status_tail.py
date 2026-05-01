@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from dispatch_engine.planner import plan_objective
+from dispatch_engine.plan_schema import import_dispatch_plan
 from dispatch_engine.state import run_status, tail_events
 
 
@@ -12,7 +13,7 @@ class StatusTailTests(unittest.TestCase):
     def test_status_reports_latest_run_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            plan = plan_objective(repo, "status objective", {"validation_hints": []})
+            plan = _import_plan(repo, objective="status objective")
 
             status = run_status(repo)
 
@@ -27,13 +28,16 @@ class StatusTailTests(unittest.TestCase):
     def test_tail_reads_events_for_explicit_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            plan = plan_objective(repo, "tail objective", {"validation_hints": []})
+            plan = _import_plan(repo, objective="tail objective")
 
             tail = tail_events(repo, run_id=plan["run_id"])
 
             self.assertEqual(tail["kind"], "tail")
             self.assertEqual(tail["run_id"], plan["run_id"])
-            self.assertEqual([event["type"] for event in tail["events"]], ["run.created", "workstream.planned"])
+            self.assertEqual(
+                [event["type"] for event in tail["events"]],
+                ["run.created", "plan.imported", "workstream.planned"],
+            )
 
     def test_status_and_tail_handle_missing_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -50,7 +54,7 @@ class StatusTailTests(unittest.TestCase):
     def test_explicit_missing_run_id_is_clear(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            plan_objective(repo, "missing run objective", {"validation_hints": []})
+            _import_plan(repo, objective="missing run objective")
 
             status = run_status(repo, run_id="missing")
             tail = tail_events(repo, run_id="missing")
@@ -59,6 +63,34 @@ class StatusTailTests(unittest.TestCase):
             self.assertEqual(tail["status"], "missing_run")
             self.assertIn("Run not found", status["summary"])
             self.assertIn("Run not found", tail["summary"])
+
+
+def _import_plan(repo: Path, *, objective: str) -> dict:
+    plan_path = repo / ".dispatch" / "plans" / "plan-001.json"
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text(json.dumps(_plan(objective)) + "\n")
+    return import_dispatch_plan(repo, plan_path)
+
+
+def _plan(objective: str) -> dict:
+    return {
+        "schema_version": 1,
+        "plan_id": "plan-001",
+        "objective": objective,
+        "workstreams": [
+            {
+                "id": "01-status-tail",
+                "title": "Preserve status and tail readers",
+                "mode": "serial",
+                "scope": "Imported run fixture.",
+                "files": ["scripts/dispatch_engine/state.py"],
+                "depends_on": [],
+                "parallel_group": None,
+                "validation": ["PYTHONPATH=scripts python3 -m unittest discover -s tests"],
+            }
+        ],
+        "decisions": [],
+    }
 
 
 if __name__ == "__main__":

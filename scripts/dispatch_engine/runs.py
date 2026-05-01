@@ -14,6 +14,10 @@ def runs_dir(repo_root: Path) -> Path:
     return repo_root / ".dispatch" / "runs"
 
 
+def plans_dir(repo_root: Path) -> Path:
+    return repo_root / ".dispatch" / "plans"
+
+
 def run_dir(repo_root: Path, run_id: str) -> Path:
     return runs_dir(repo_root) / run_id
 
@@ -39,5 +43,7 @@ def initialize_run_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=False)
     (path / "workstreams").mkdir()
     (path / "artifacts").mkdir()
+    (path / "reviews").mkdir()
+    (path / "validation").mkdir()
     (path / "events.jsonl").write_text("")
     (path / "decisions.jsonl").write_text("")

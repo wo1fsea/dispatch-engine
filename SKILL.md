@@ -1,6 +1,6 @@
 ---
 name: dispatch-engine
-description: Runtime-backed Codex skill for supervising repo-native agent work. Use when a user wants to inspect a repository's own planning conventions, turn an objective into schedulable workstreams, run or resume a local Dispatch Engine loop, monitor agent workers/reviewers, resolve pending decisions, or package the bundled runtime for direct skill installation.
+description: Runtime-backed Codex skill for supervising repo-native agent work. Use when a user wants interactive Codex to read a repository's own planning conventions, prepare an explicit dispatch plan, import that plan into durable Dispatch Engine state, monitor agent workers/reviewers, resolve pending decisions, or package the bundled runtime for direct skill installation.
 ---
 
 # Dispatch Engine
@@ -9,9 +9,11 @@ Use this skill to operate the bundled Dispatch Engine runtime from a repository 
 
 Dispatch Engine is a skill-first project: the skill root contains the operator instructions, the runnable local CLI, runtime modules, and reference protocols. A user should be able to clone or copy this directory into their Codex skills directory and have the runtime available through the bundled scripts.
 
-## Core Rule
+## Boundary Rule
 
-Treat the bundled runtime as the execution source of truth. Do not reimplement scheduling, event logging, status parsing, or worker prompt generation by hand when a `scripts/de.py` command can do it.
+Interactive Codex plus this skill owns repository discovery, planning judgment, workstream splitting, review, and user conversation. The bundled runtime owns explicit plan import, durable `.dispatch/` run state, event logging, status/tail readers, and the future mechanical orchestrator loop.
+
+Dispatch Engine-generated non-project runtime content in a target repository belongs only under `.dispatch/`. Project files changed to satisfy the user's objective remain in the target repository's normal project paths.
 
 ## Runtime Location
 
@@ -27,21 +29,22 @@ Use:
 
 ```bash
 python scripts/de.py --help
-python scripts/de.py inspect <repo>
-python scripts/de.py plan <repo> --objective "<objective>"
+python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json
 python scripts/de.py status <repo>
+python scripts/de.py tail <repo>
 ```
 
 ## Operating Flow
 
 1. Read the target repository's local instructions before dispatching work.
-2. Run `python scripts/de.py inspect <repo>` to discover instructions, planning sources, scripts, and validation hints.
-3. Run `python scripts/de.py plan <repo> --objective "<objective>"` before starting work when the objective is ambiguous, cross-module, or likely to need multiple agents.
-4. Ask the user before running worker agents when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
-5. Run or resume the Dispatch Engine loop through the bundled CLI.
-6. Monitor status through CLI output and run-state files, not through chat memory alone.
-7. Resolve pending decisions explicitly before continuing blocked work.
-8. Record validation evidence before claiming a run is complete.
+2. Use interactive Codex judgment to summarize the repository rules, planning basis, validation strategy, workstreams, dependencies, write scopes, and pending decisions.
+3. Write any Dispatch Engine-generated plan file under `.dispatch/plans/` in the target repository.
+4. Import the explicit plan into runtime state with `python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json`.
+5. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
+6. Run or resume the future Dispatch Engine orchestrator loop from imported plan state.
+7. Monitor status through CLI output and `.dispatch/runs/` files, not through chat memory alone.
+8. Resolve pending decisions explicitly before continuing blocked work.
+9. Record validation evidence before claiming a run is complete.
 
 ## Packaging Rule
 
@@ -59,3 +62,4 @@ If runtime code has moved or been rebuilt elsewhere, copy or vendor the current 
 - Read `references/operator-flow.md` when supervising a run from interactive Codex.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.
+- Read `references/orchestrator-loop.md` when designing the future runtime scheduler, worker, reviewer, validation, and status/tail loop.

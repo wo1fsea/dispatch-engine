@@ -7,8 +7,7 @@ import json
 from pathlib import Path
 
 from . import __version__
-from .inspect import inspect_repo
-from .planner import plan_objective
+from .plan_schema import PlanValidationError, import_dispatch_plan
 from .state import run_status, tail_events
 
 
@@ -23,26 +22,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("version", help="Print the bundled runtime version.")
 
-    inspect_parser = subparsers.add_parser("inspect", help="Inspect a target repository.")
-    inspect_parser.add_argument("target", nargs="?", default=".", help="Repository path to inspect.")
-    inspect_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
-
-    plan_parser = subparsers.add_parser("plan", help="Create a dry-run workstream plan.")
-    plan_parser.add_argument("target", nargs="?", default=".", help="Repository path to plan for.")
-    plan_parser.add_argument("--objective", required=True, help="Work objective to plan.")
-    plan_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    init_parser = subparsers.add_parser("init", help="Import an explicit dispatch plan.")
+    init_parser.add_argument("target", help="Repository path to initialize.")
+    init_parser.add_argument("--plan", required=True, help="Explicit dispatch plan JSON path.")
+    _add_json_flag(init_parser)
 
     status_parser = subparsers.add_parser("status", help="Show latest Dispatch Engine run state.")
     status_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     status_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
-    status_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    _add_json_flag(status_parser)
 
     tail_parser = subparsers.add_parser("tail", help="Print Dispatch Engine run events.")
     tail_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     tail_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
-    tail_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    _add_json_flag(tail_parser)
 
     return parser
+
+
+def _add_json_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Emit machine-readable JSON.",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,13 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "version":
         return _print({"version": __version__}, args.json)
 
-    if args.command == "inspect":
-        result = inspect_repo(Path(args.target))
-        return _print(result, args.json)
-
-    if args.command == "plan":
-        inspection = inspect_repo(Path(args.target))
-        result = plan_objective(Path(args.target), args.objective, inspection)
+    if args.command == "init":
+        try:
+            result = import_dispatch_plan(Path(args.target), Path(args.plan))
+        except PlanValidationError as exc:
+            return _print({"kind": "error", "status": "invalid_plan", "summary": str(exc)}, args.json)
         return _print(result, args.json)
 
     if args.command == "status":
@@ -78,34 +80,23 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _print(payload: dict, as_json: bool) -> int:
+    if payload.get("kind") == "error":
+        if as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(payload["summary"])
+        return 1
+
     if as_json:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
     kind = payload.get("kind")
-    if kind == "inspection":
-        print(f"Repository: {payload['repo_root']}")
-        print("Instructions:")
-        for item in payload["instructions"]:
-            print(f"- {item}")
-        print("Planning sources:")
-        for item in payload["planning_sources"]:
-            print(f"- {item}")
-        print("Validation hints:")
-        for item in payload["validation_hints"]:
-            print(f"- {item}")
-        return 0
-
-    if kind == "plan":
-        print(f"Objective: {payload['objective']}")
-        print(f"Run state: {payload['state_dir']}")
-        print("Workstreams:")
-        for item in payload["workstreams"]:
-            print(f"- {item['id']}: {item['title']} ({item['status']})")
-        if payload["decisions"]:
-            print("Pending decisions:")
-            for item in payload["decisions"]:
-                print(f"- {item['id']}: {item['question']}")
+    if kind == "plan_import":
+        print(f"Imported plan: {payload['plan_id']}")
+        print(f"Run: {payload['run_id']}")
+        print(f"State: {payload['state_dir']}")
+        print(f"Workstreams: {payload['workstream_count']}")
         return 0
 
     if kind == "status":

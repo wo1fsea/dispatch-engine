@@ -5,16 +5,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from dispatch_engine.planner import plan_objective
+from dispatch_engine.plan_schema import import_dispatch_plan
 
 
 class RuntimeStateTests(unittest.TestCase):
-    def test_plan_writes_durable_run_state(self) -> None:
+    def test_imported_plan_writes_durable_run_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            inspection = {"validation_hints": ["none detected"]}
+            plan_path = repo / ".dispatch" / "plans" / "plan-001.json"
+            plan_path.parent.mkdir(parents=True)
+            plan_path.write_text(json.dumps(_plan()) + "\n")
 
-            plan = plan_objective(repo, "smoke test objective", inspection)
+            plan = import_dispatch_plan(repo, plan_path)
 
             state_dir = Path(plan["state_dir"])
             self.assertTrue((state_dir / "run.json").is_file())
@@ -34,8 +36,34 @@ class RuntimeStateTests(unittest.TestCase):
             ]
 
             self.assertEqual(run["status"], "planned")
+            self.assertEqual(run["objective"], "smoke test objective")
+            self.assertEqual(run["plan"]["plan_id"], "plan-001")
             self.assertEqual(workstream["status"], "planned")
-            self.assertEqual([event["type"] for event in events], ["run.created", "workstream.planned"])
+            self.assertEqual(
+                [event["type"] for event in events],
+                ["run.created", "plan.imported", "workstream.planned"],
+            )
+
+
+def _plan() -> dict:
+    return {
+        "schema_version": 1,
+        "plan_id": "plan-001",
+        "objective": "smoke test objective",
+        "workstreams": [
+            {
+                "id": "01-implementation",
+                "title": "Implement objective",
+                "mode": "serial",
+                "scope": "Imported workstream fixture.",
+                "files": ["scripts/dispatch_engine/cli.py"],
+                "depends_on": [],
+                "parallel_group": None,
+                "validation": ["PYTHONPATH=scripts python3 -m unittest discover -s tests"],
+            }
+        ],
+        "decisions": [],
+    }
 
 
 if __name__ == "__main__":
