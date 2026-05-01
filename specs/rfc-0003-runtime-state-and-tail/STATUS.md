@@ -3,9 +3,9 @@ spec_id: rfc-0003-runtime-state-and-tail
 language: en-US
 audience: agent
 doc_type: spec
-status: active
-implementation: partial
-validation: partial
+status: ready-review
+implementation: complete
+validation: complete
 coordinator: codex
 updated: 2026-05-02
 ---
@@ -14,7 +14,7 @@ updated: 2026-05-02
 
 ## Summary
 
-Status/tail CLI and inspect/plan refinement are validated. Docs validation remains.
+All rfc-0003 workstreams are validated. Runtime state, status/tail CLI, inspect/plan refinement, and documentation validation are ready for review.
 
 ## Workstreams
 
@@ -23,7 +23,7 @@ Status/tail CLI and inspect/plan refinement are validated. Docs validation remai
 | 01 | Runtime state layout | validated | codex | main | | 2026-05-02 |
 | 02 | Status and tail CLI | validated | codex | main | 01 | 2026-05-02 |
 | 03 | Inspect and plan refinement | validated | codex-worker | main | 01 | 2026-05-02 |
-| 04 | Documentation and validation | ready | unassigned | | 01, 02, 03 | 2026-05-02 |
+| 04 | Documentation and validation | validated | codex-worker | main | 01, 02, 03 | 2026-05-02 |
 
 ## Activity Log
 
@@ -34,3 +34,5 @@ Status/tail CLI and inspect/plan refinement are validated. Docs validation remai
 - 2026-05-02 codex: validated `02-status-tail`; status/tail unittest and CLI smoke checks pass.
 - 2026-05-02 codex-worker: claimed `03-inspect-plan` on main.
 - 2026-05-02 codex-worker: validated `03-inspect-plan`; TDD inspect/plan tests, full unittest discovery, and Python 3 CLI smokes pass.
+- 2026-05-02 codex-worker: claimed `04-docs-validation` on main.
+- 2026-05-02 codex-worker: validated `04-docs-validation`; event protocol reference and README examples updated, full Python 3 CLI smokes and unittest discovery pass, manual `.dispatch` ignore/staging checks pass, and generated state/cache cleanup complete.

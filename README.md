@@ -27,8 +27,12 @@ specs/                      # project specs
 Basic smoke checks:
 
 ```bash
-python scripts/de.py --help
-python scripts/de.py version
+python3 scripts/de.py --help
+python3 scripts/de.py version
+python3 scripts/de.py inspect .
+python3 scripts/de.py plan . --objective "smoke test objective"
+python3 scripts/de.py status .
+python3 scripts/de.py tail .
 ```
 
 ## Current Direction
