@@ -12,6 +12,6 @@ This directory holds the detailed engineering governance workflows.
 
 ## Local Profile
 
-Dispatch Engine currently uses a strict governance profile because its core surface will include CLI commands, runtime state, event formats, worker adapters, validation behavior, and agent-facing instructions.
+Dispatch Engine currently uses a strict governance profile because its core surface includes skill metadata, bundled CLI commands, runtime state, event formats, worker adapters, validation behavior, and agent-facing instructions.
 
 Prefer the smallest workflow that fits the task. Use specs and workstreams for ambiguous, cross-module, contract-affecting, or high-risk changes; keep narrow mechanical changes direct.

@@ -12,9 +12,13 @@ doc_type: normative
 
 ## Project Context
 
-Dispatch Engine is a local orchestration runtime. Agents should expect work around CLI design, file-based or database-backed runtime state, scheduling rules, worker/reviewer adapters, validation commands, event logs, and companion skill/operator documentation.
+Dispatch Engine is a runtime-backed Codex skill. The repository root is the installable skill directory, and the bundled runtime lives under `scripts/`.
+
+Agents should expect work around `SKILL.md`, `agents/openai.yaml`, bundled runtime scripts, CLI design, file-based or database-backed runtime state, scheduling rules, worker/reviewer adapters, validation commands, event logs, and operator documentation.
 
 Do not assume a universal external spec format. The product direction is to adapt to a target repository's own planning conventions and keep Dispatch Engine's normalized execution model internal.
+
+Before telling a user to install or copy the skill, confirm the runtime program is present inside the skill directory and smoke-tested.
 
 ## Thin Adapters
 

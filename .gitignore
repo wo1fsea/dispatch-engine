@@ -1,1 +1,4 @@
 .out/
+.dispatch/
+__pycache__/
+*.pyc

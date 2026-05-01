@@ -18,3 +18,8 @@ specs/<source>-<id>-<short-slug>/
   workstreams/
     01-implementation.md
 ```
+
+## Current Specs
+
+- `rfc-0001-initial-governance`: initial repository governance.
+- `rfc-0002-skill-first-packaging`: root-level runtime-backed skill packaging.

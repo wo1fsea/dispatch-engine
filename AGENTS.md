@@ -12,9 +12,11 @@ Keep this file short. Put detailed rules in `docs/governance/` and use this file
 
 ## Project Context
 
-Dispatch Engine is a local orchestration runtime for repo-native agent dispatch. This repo may contain both the runtime implementation and a companion skill or operator guidance until their release boundaries stabilize.
+Dispatch Engine is a runtime-backed Codex skill for repo-native agent dispatch. The repository root is the installable skill directory, and the bundled runtime lives under `scripts/`.
 
-Optimize governance for a small local CLI/runtime that may grow long-running scheduling behavior, worker adapters, event logs, validation runners, and agent-facing documentation.
+Optimize governance for a skill-first local CLI/runtime that may grow long-running scheduling behavior, worker adapters, event logs, validation runners, and agent-facing documentation.
+
+Before giving install or copy guidance, verify the skill root contains `SKILL.md`, `agents/openai.yaml`, `scripts/de.py`, `scripts/dispatch_engine/`, and the relevant `references/` files.
 
 ## Read Order
 
@@ -31,6 +33,7 @@ Optimize governance for a small local CLI/runtime that may grow long-running sch
 | New or changed API, command, config, dependency, adapter, workflow doc, template, or agent entrypoint | `docs/governance/change-gate.md` |
 | Code structure, interfaces, dead code, dependencies, or compatibility layers | `docs/governance/code-quality.md` |
 | README, docs, examples, generated docs, specs, contributor guidance, or agent instructions | `docs/governance/documentation-standards.md` |
+| Skill metadata, bundled runtime packaging, scripts copied into the skill, or install guidance | `SKILL.md`, then `docs/governance/change-gate.md` and `docs/governance/documentation-standards.md` |
 | Screenshots, recordings, traces, logs, reports, debug dumps, or scratch files | `docs/governance/temp-artifacts.md` |
 | Ambiguous feature or cross-module change | `docs/governance/spec-workflow.md` |
 | Creating or revising specs | `docs/governance/spec-production.md` |

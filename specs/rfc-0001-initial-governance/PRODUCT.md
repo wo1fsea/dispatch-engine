@@ -8,11 +8,11 @@ doc_type: spec
 
 ## Summary
 
-Initialize lightweight repository governance so humans and agents can safely evolve Dispatch Engine as a local runtime and companion skill surface.
+Initialize lightweight repository governance so humans and agents can safely evolve Dispatch Engine as a runtime-backed skill.
 
 ## Goals / Non-goals
 
-- Goal: Provide a canonical agent router and detailed governance workflows for development, validation, review, documentation, specs, temporary artifacts, and multi-agent work.
+- Goal: Provide a canonical agent router and detailed governance workflows for skill packaging, development, validation, review, documentation, specs, temporary artifacts, and multi-agent work.
 - Goal: Keep repo instructions discoverable for Codex, Claude, Gemini, GitHub Copilot, and future agent operators.
 - Goal: Establish a starter spec/status structure for future ambiguous or cross-module work.
 - Non-goal: Force every change through a heavy spec process.
@@ -30,5 +30,5 @@ Initialize lightweight repository governance so humans and agents can safely evo
 ## Open Questions
 
 - Which implementation language and package manager will become canonical for the runtime?
-- Will the companion skill be shipped from this repo as bundled runtime scripts or as a separate install artifact later?
+- Will the bundled runtime remain script-invoked from the skill path, or later gain a separate `pipx` or package install path?
 - Should `.dispatch/` run state be ignored, committed selectively, or controlled per target repository?

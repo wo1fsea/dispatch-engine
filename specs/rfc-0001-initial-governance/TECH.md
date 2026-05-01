@@ -10,9 +10,9 @@ Product spec: `./PRODUCT.md`
 
 ## Context
 
-Dispatch Engine is a new public repository with an initial README and no implementation code yet. The repo is expected to grow into a local CLI/runtime with worker adapters, review loops, validation handling, event logs, and companion skill/operator documentation.
+Dispatch Engine is a public runtime-backed skill repository. The repo root is the installable skill directory, and the bundled runtime is expected to grow into a local CLI with worker adapters, review loops, validation handling, event logs, and operator documentation.
 
-Because the repo will be operated by agents, it needs a short canonical router plus detailed governance modules. The governance should stay lightweight for narrow changes but strict around public CLI surface, runtime state formats, event protocols, adapters, validation behavior, and agent instructions.
+Because the repo will be installed and operated by agents, it needs a short canonical router plus detailed governance modules. The governance should stay lightweight for narrow changes but strict around skill metadata, public CLI surface, runtime state formats, event protocols, adapters, validation behavior, and agent instructions.
 
 ## Proposed Changes
 
@@ -35,6 +35,6 @@ Because the repo will be operated by agents, it needs a short canonical router p
 ## Risks and Follow-ups
 
 - Risk: Governance could become heavier than the early repo needs. Mitigation: `AGENTS.md` and governance docs explicitly allow direct changes for narrow mechanical work.
-- Risk: Runtime and companion skill boundaries may change. Mitigation: keep current guidance descriptive and update it when packaging decisions become stable.
+- Risk: Skill-first packaging may later need a separate package install path. Mitigation: keep the bundled runtime canonical until a stable external package exists.
 - Follow-up: Once the runtime language is chosen, add canonical setup, test, lint, typecheck, and smoke commands.
 - Follow-up: Create a real product/runtime spec before implementing multi-step scheduling or worker execution.

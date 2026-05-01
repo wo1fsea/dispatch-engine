@@ -1,0 +1,6 @@
+interface:
+  display_name: "Dispatch Engine"
+  short_description: "Supervise repo-native agent workstreams"
+  default_prompt: "Use $dispatch-engine to inspect this repository and plan a supervised agent run."
+policy:
+  allow_implicit_invocation: true
