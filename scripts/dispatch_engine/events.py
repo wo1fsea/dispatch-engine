@@ -30,3 +30,14 @@ def append_event(
         event["workstream"] = workstream
     with event_log.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, sort_keys=True) + "\n")
+
+
+def read_events(event_log: Path) -> list[dict[str, Any]]:
+    if not event_log.exists():
+        return []
+    events = []
+    for line in event_log.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        events.append(json.loads(line))
+    return events

@@ -9,7 +9,7 @@ from pathlib import Path
 from . import __version__
 from .inspect import inspect_repo
 from .planner import plan_objective
-from .state import latest_run_summary
+from .state import run_status, tail_events
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,13 +25,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a target repository.")
     inspect_parser.add_argument("target", nargs="?", default=".", help="Repository path to inspect.")
+    inspect_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     plan_parser = subparsers.add_parser("plan", help="Create a dry-run workstream plan.")
     plan_parser.add_argument("target", nargs="?", default=".", help="Repository path to plan for.")
     plan_parser.add_argument("--objective", required=True, help="Work objective to plan.")
+    plan_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     status_parser = subparsers.add_parser("status", help="Show latest Dispatch Engine run state.")
     status_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
+    status_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
+    status_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    tail_parser = subparsers.add_parser("tail", help="Print Dispatch Engine run events.")
+    tail_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
+    tail_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
+    tail_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     return parser
 
@@ -57,7 +66,11 @@ def main(argv: list[str] | None = None) -> int:
         return _print(result, args.json)
 
     if args.command == "status":
-        result = latest_run_summary(Path(args.target))
+        result = run_status(Path(args.target), run_id=args.run_id)
+        return _print(result, args.json)
+
+    if args.command == "tail":
+        result = tail_events(Path(args.target), run_id=args.run_id)
         return _print(result, args.json)
 
     parser.error(f"unknown command: {args.command}")
@@ -97,6 +110,20 @@ def _print(payload: dict, as_json: bool) -> int:
 
     if kind == "status":
         print(payload["summary"])
+        if payload.get("status") == "ok":
+            print(f"State: {payload['state_dir']}")
+            print("Workstreams:")
+            for status, count in sorted(payload["workstream_counts"].items()):
+                print(f"- {status}: {count}")
+        return 0
+
+    if kind == "tail":
+        if payload.get("status") != "ok":
+            print(payload["summary"])
+            return 0
+        for event in payload["events"]:
+            workstream = f" [{event['workstream']}]" if "workstream" in event else ""
+            print(f"{event['ts']} {event['type']}{workstream}")
         return 0
 
     if "version" in payload:

@@ -14,14 +14,14 @@ updated: 2026-05-02
 
 ## Summary
 
-Runtime state layout is validated. Status/tail, inspect/plan refinement, and docs validation remain.
+Status/tail CLI is validated. Inspect/plan refinement and docs validation remain.
 
 ## Workstreams
 
 | ID | Scope | Status | Owner | Branch / PR | Depends on | Updated |
 |---|---|---|---|---|---|---|
 | 01 | Runtime state layout | validated | codex | main | | 2026-05-02 |
-| 02 | Status and tail CLI | ready | unassigned | | 01 | 2026-05-02 |
+| 02 | Status and tail CLI | validated | codex | main | 01 | 2026-05-02 |
 | 03 | Inspect and plan refinement | ready | unassigned | | 01 | 2026-05-02 |
 | 04 | Documentation and validation | ready | unassigned | | 01, 02, 03 | 2026-05-02 |
 
@@ -30,3 +30,5 @@ Runtime state layout is validated. Status/tail, inspect/plan refinement, and doc
 - 2026-05-02 codex: created self-dogfood spec for runtime state, status, tail, inspect, and plan improvements.
 - 2026-05-02 codex: claimed `01-runtime-state`.
 - 2026-05-02 codex: validated `01-runtime-state`; targeted unittest and CLI smoke checks pass.
+- 2026-05-02 codex: claimed `02-status-tail`.
+- 2026-05-02 codex: validated `02-status-tail`; status/tail unittest and CLI smoke checks pass.
