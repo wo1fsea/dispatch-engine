@@ -21,6 +21,7 @@ PLANNING_GLOBS = [
     "docs/**/*.md",
     "plans/**/*.md",
 ]
+PLANNING_SOURCE_LIMIT = 8
 
 VALIDATION_FILES = [
     "package.json",
@@ -56,7 +57,7 @@ def _existing(root: Path, paths: list[str]) -> list[str]:
 
 
 def _planning_sources(root: Path) -> list[str]:
-    found: list[str] = []
+    found: set[str] = set()
     seen: set[str] = set()
     for pattern in PLANNING_GLOBS:
         for path in sorted(root.glob(pattern)):
@@ -65,7 +66,19 @@ def _planning_sources(root: Path) -> list[str]:
                 if rel in seen:
                     continue
                 seen.add(rel)
-                found.append(rel)
-            if len(found) >= 20:
-                return found
-    return found
+                found.add(rel)
+    return sorted(found, key=_planning_source_priority)[:PLANNING_SOURCE_LIMIT]
+
+
+def _planning_source_priority(path: str) -> tuple[int, str]:
+    if path.endswith("/PRODUCT.md") or path == "PRODUCT.md":
+        return (0, path)
+    if path.endswith("/TECH.md") or path == "TECH.md":
+        return (1, path)
+    if path.startswith("specs/"):
+        return (2, path)
+    if path.startswith("plans/"):
+        return (3, path)
+    if path.startswith("docs/"):
+        return (4, path)
+    return (5, path)

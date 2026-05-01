@@ -3,16 +3,16 @@ id: 03-inspect-plan
 language: en-US
 audience: agent
 doc_type: spec
-status: ready
-owner: unassigned
-branch:
+status: validated
+owner: codex-worker
+branch: main
 pr:
 files:
   - scripts/dispatch_engine/inspect.py
   - scripts/dispatch_engine/planner.py
 depends_on:
   - 01-runtime-state
-claimed_at:
+claimed_at: 2026-05-02T00:00:00+08:00
 lease_expires_at:
 updated: 2026-05-02
 ---
@@ -33,14 +33,21 @@ Reduce inspection noise and make planning conservative about broad or risky obje
 
 ## Progress
 
-Not started.
+Validated inspect planning-source bounds/deduplication and conservative plan pending-decision behavior.
 
 ## Validation
 
-- `python scripts/de.py inspect .`
-- `python scripts/de.py inspect . --json`
-- `python scripts/de.py plan . --objective "update backend API and UI flow"`
-- Confirm broad objective records a pending decision.
+- TDD red: `PYTHONPATH=scripts python3 -m unittest tests.test_inspect_plan` failed before implementation because inspect returned 14 planning sources instead of 8 and broad planning returned 0 decisions instead of 1.
+- TDD green: `PYTHONPATH=scripts python3 -m unittest tests.test_inspect_plan` passed after implementation.
+- Broader unit validation: `PYTHONPATH=scripts python3 -m unittest discover -s tests`
+- Requested CLI commands with `python` were attempted but failed because `python --version` is `Python 2.7.18`, which cannot parse `from __future__ import annotations`.
+- CLI runtime validation with Python 3:
+  - `python3 scripts/de.py inspect .`
+  - `python3 scripts/de.py inspect . --json`
+  - `python3 scripts/de.py plan . --objective "update backend API and UI flow"`
+  - `python3 scripts/de.py status . --json`
+  - `python3 scripts/de.py tail . --json`
+- Confirmed broad objective records one pending decision and emits `decision.created`.
 
 ## Blocked
 
@@ -51,3 +58,5 @@ Owner to unblock:
 ## Activity Log
 
 - 2026-05-02 codex: workstream initialized.
+- 2026-05-02 codex-worker: claimed workstream on main.
+- 2026-05-02 codex-worker: validated inspect bounds/deduplication and plan pending-decision heuristic.
