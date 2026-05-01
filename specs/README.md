@@ -23,3 +23,4 @@ specs/<source>-<id>-<short-slug>/
 
 - `rfc-0001-initial-governance`: initial repository governance.
 - `rfc-0002-skill-first-packaging`: root-level runtime-backed skill packaging.
+- `rfc-0003-runtime-state-and-tail`: self-dogfood spec for durable run state, status, tail, inspect, and plan improvements.
