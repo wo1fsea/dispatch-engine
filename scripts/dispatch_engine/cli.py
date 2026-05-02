@@ -10,6 +10,7 @@ from . import __version__
 from .coordinators import CoordinatorLaunchError, launch_run_coordinator, render_run_dry_run
 from .plan_schema import PlanValidationError, import_dispatch_plan
 from .state import run_status, tail_events
+from .supervisor import launch_detached_coordinator
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--run-id", help="Use a specific run id instead of the latest run.")
     run_parser.add_argument("--provider", default="codex", help="Coordinator provider: codex or claude.")
     run_parser.add_argument("--dry-run", action="store_true", help="Render without launching a provider.")
+    run_parser.add_argument("--detach", action="store_true", help="Start a background coordinator supervisor and return immediately.")
     _add_json_flag(run_parser)
 
     return parser
@@ -85,8 +87,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run":
         try:
+            if args.dry_run and args.detach:
+                raise CoordinatorLaunchError("--dry-run and --detach cannot be used together")
             if args.dry_run:
                 result = render_run_dry_run(
+                    Path(args.target),
+                    run_id=args.run_id,
+                    provider=args.provider,
+                )
+            elif args.detach:
+                result = launch_detached_coordinator(
                     Path(args.target),
                     run_id=args.run_id,
                     provider=args.provider,
@@ -179,6 +189,17 @@ def _print(payload: dict, as_json: bool) -> int:
             print(f"Failure: {payload['failure_reason']}")
         return 0 if payload.get("exit_code") == 0 else 1
 
+    if kind == "run_detached":
+        print(f"Provider: {payload['provider']} ({payload['profile']})")
+        print(f"Run: {payload['run_id']}")
+        print(f"State: {payload['state_dir']}")
+        print(f"Supervisor PID: {payload['supervisor_pid']}")
+        print(f"Supervisor: {payload['supervisor_path']}")
+        print(f"Prompt: {payload['prompt_path']}")
+        print(f"Stdout: {payload['stdout_path']}")
+        print(f"Stderr: {payload['stderr_path']}")
+        return 0
+
     if "version" in payload:
         print(payload["version"])
         return 0
@@ -192,8 +213,11 @@ def _print_agent_status(payload: dict) -> None:
     role_counts = agent_counts.get("by_role", {})
     status_counts = agent_counts.get("by_status", {})
     total_agents = sum(role_counts.values())
+    supervisor_counts = payload.get("supervisor_counts", {}).get("by_status", {})
     if total_agents == 0:
         print("Agents: none")
+        if supervisor_counts:
+            print(f"Supervisors: {_format_counts(supervisor_counts)}")
         return
 
     role_text = _format_counts(role_counts)
@@ -215,6 +239,8 @@ def _print_agent_status(payload: dict) -> None:
         f"{heartbeat_summary.get('with_heartbeat', 0)} present, "
         f"{heartbeat_summary.get('missing_heartbeat', 0)} missing"
     )
+    if supervisor_counts:
+        print(f"Supervisors: {_format_counts(supervisor_counts)}")
 
     assignments = payload.get("workstream_assignments", [])
     if assignments:

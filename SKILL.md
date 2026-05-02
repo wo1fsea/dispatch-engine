@@ -46,6 +46,7 @@ Use:
 python scripts/de.py --help
 python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json
 python scripts/de.py run <repo>
+python scripts/de.py run <repo> --detach
 python scripts/de.py run <repo> --dry-run
 python scripts/de.py run <repo> --provider codex --dry-run
 python scripts/de.py run <repo> --provider claude --dry-run
@@ -54,10 +55,12 @@ python scripts/de.py tail <repo>
 ```
 
 `de run <repo>` launches the latest imported run's provider CLI coordinator in
-the foreground. When `--provider` is omitted, the runtime uses provider `codex`
-and launches a Codex CLI command shape based on `codex exec`. `--provider codex`
-selects the same provider/profile explicitly. `--provider claude` launches a
-Claude CLI command shape based on `claude -p`.
+the foreground. `de run <repo> --detach` starts a background supervisor and
+returns immediately so interactive Codex can keep talking with the user while
+`de status` and `de tail` expose progress. When `--provider` is omitted, the
+runtime uses provider `codex` and launches a Codex CLI command shape based on
+`codex exec`. `--provider codex` selects the same provider/profile explicitly.
+`--provider claude` launches a Claude CLI command shape based on `claude -p`.
 
 `de run <repo> --dry-run` renders the provider command and coordinator prompt
 without starting Codex, Claude, or any other provider process, and without
@@ -71,6 +74,14 @@ run state:
 .dispatch/runs/<run-id>/prompts/coordinator-001.md
 .dispatch/runs/<run-id>/logs/coordinator-001.stdout.log
 .dispatch/runs/<run-id>/logs/coordinator-001.stderr.log
+```
+
+Detached launches also write:
+
+```text
+.dispatch/runs/<run-id>/supervisors/coordinator-001.json
+.dispatch/runs/<run-id>/logs/coordinator-001.supervisor.stdout.log
+.dispatch/runs/<run-id>/logs/coordinator-001.supervisor.stderr.log
 ```
 
 Codex and Claude receive a short instruction that points to the recorded prompt
@@ -94,7 +105,7 @@ files, allowed write roots, validation expectations, and report path.
 4. Import the explicit plan into runtime state with `python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json`.
 5. Preview the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
-7. Start the foreground coordinator with `python scripts/de.py run <repo>` when the imported run is ready for live supervision.
+7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
 8. Monitor status through CLI output and `.dispatch/runs/` files, not through chat memory alone.
 9. Resolve pending decisions explicitly before continuing blocked work.
 10. Record validation evidence before claiming a run is complete.
@@ -122,6 +133,7 @@ logs, status records, and heartbeats for spawned agents live under:
 ```text
 .dispatch/runs/<run-id>/agents/
 .dispatch/runs/<run-id>/prompts/
+.dispatch/runs/<run-id>/supervisors/
 .dispatch/runs/<run-id>/reports/
 .dispatch/runs/<run-id>/reviews/
 .dispatch/runs/<run-id>/validation/

@@ -46,6 +46,7 @@ def initialize_run_dir(path: Path) -> None:
     (path / "reports").mkdir()
     (path / "logs").mkdir()
     (path / "prompts").mkdir()
+    (path / "supervisors").mkdir()
     (path / "heartbeats").mkdir()
     (path / "artifacts").mkdir()
     (path / "reviews").mkdir()
@@ -61,6 +62,7 @@ def ensure_run_runtime_dirs(path: Path) -> None:
         "reports",
         "logs",
         "prompts",
+        "supervisors",
         "heartbeats",
         "artifacts",
         "reviews",

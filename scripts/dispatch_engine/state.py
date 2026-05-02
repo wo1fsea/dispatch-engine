@@ -15,6 +15,7 @@ from .decisions import (
 )
 from .events import read_events
 from .runs import resolve_run_dir
+from .supervisor import read_supervisors
 
 TERMINAL_AGENT_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
@@ -126,8 +127,10 @@ def _agent_observability(
     coordinator = _first_coordinator(agents)
     assignments = _active_workstream_assignments(agents)
     protocol_violations = _protocol_violation_summary(run_state_dir, events)
+    supervisors = read_supervisors(run_state_dir)
     return {
         "agents": agents,
+        "supervisors": supervisors,
         "coordinator": coordinator,
         "provider": coordinator.get("provider") if coordinator else None,
         "profile": coordinator.get("profile") if coordinator else None,
@@ -138,6 +141,9 @@ def _agent_observability(
         "workstream_assignments": assignments,
         "workstream_progress": _workstream_progress(workstreams, assignments),
         "heartbeat_summary": _heartbeat_summary(agents),
+        "supervisor_counts": {
+            "by_status": dict(Counter(item.get("status", "unknown") for item in supervisors)),
+        },
         "protocol_violations": protocol_violations,
     }
 

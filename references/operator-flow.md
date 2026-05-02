@@ -27,9 +27,10 @@ Dispatch Engine-generated non-project runtime content must live under `.dispatch
 5. Import the explicit plan into `.dispatch/runs/<run-id>/` with `python3 scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json`.
 6. Ask the user before high-risk execution, parallel work, or unresolved decisions.
 7. Preview coordinator launch with `python3 scripts/de.py run <repo> --dry-run`; omitting `--provider` uses the default `codex` provider, while `--provider claude` is optional.
-8. Monitor status and event logs through `status`, `tail`, and `.dispatch/runs/` files.
-9. Resolve decisions explicitly.
-10. Report validation evidence and residual risk.
+8. Prefer `python3 scripts/de.py run <repo> --detach` from interactive Codex so the conversation can continue while status and tail are polled.
+9. Monitor status and event logs through `status`, `tail`, and `.dispatch/runs/` files.
+10. Resolve decisions explicitly.
+11. Report validation evidence and residual risk.
 
 ## Runtime Loop
 

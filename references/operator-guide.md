@@ -103,6 +103,15 @@ Start a live foreground coordinator:
 python3 "$DE_SKILL/scripts/de.py" run "$TARGET"
 ```
 
+When operating from interactive Codex, prefer detached launch so the
+conversation can continue while the coordinator runs:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --detach
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
+```
+
 Omitting `--provider` defaults to provider `codex`, using a `codex exec` command shape. `--provider codex` selects the same provider explicitly. `--provider claude` is optional and uses a Claude CLI command shape based on `claude -p`.
 
 The provider process launched by `de run` is a coordinator only. It may plan, dispatch, monitor, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`, but it must not directly implement project-file changes. Project implementation belongs to registered workers, reviewers, or validators using provider-native spawn mechanisms and the shared `.dispatch/` observability contract.
@@ -128,6 +137,7 @@ Runtime state is stored under:
 .dispatch/runs/<run-id>/events.jsonl
 .dispatch/runs/<run-id>/agents/
 .dispatch/runs/<run-id>/prompts/
+.dispatch/runs/<run-id>/supervisors/
 .dispatch/runs/<run-id>/reports/
 .dispatch/runs/<run-id>/reviews/
 .dispatch/runs/<run-id>/validation/

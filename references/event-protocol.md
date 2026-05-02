@@ -27,6 +27,8 @@ Use this reference when changing Dispatch Engine run-state or event-log behavior
       prompts/
         coordinator-001.md
         worker-001.md
+      supervisors/
+        coordinator-001.json
       reports/
         coordinator-001.json
         worker-001.json
@@ -96,9 +98,10 @@ their implementation, review, or validation output is treated as valid.
 coordinator and worker reports. `reviews/` contains reviewer reports and
 acceptance records. `validation/` contains validator reports plus
 runtime-captured validation commands, outputs, and summaries. `logs/` contains
-agent log streams and live coordinator stdout/stderr captures. `heartbeats/`
-contains append-only agent heartbeat streams. `artifacts/` is reserved for other
-run-scoped generated artifacts.
+agent log streams and live coordinator stdout/stderr captures. `supervisors/`
+contains detached supervisor process state. `heartbeats/` contains append-only
+agent heartbeat streams. `artifacts/` is reserved for other run-scoped generated
+artifacts.
 
 Agent registry records include:
 
@@ -261,15 +264,20 @@ unless a compatibility fixture explicitly requires it.
 ## Provider Coordinator Run
 
 `python3 scripts/de.py run <repo>` launches a foreground provider CLI
-coordinator from imported run state. Omitting `--provider` defaults to provider
-`codex`. `--provider codex` launches a `codex exec` command shape explicitly.
-`--provider claude` launches a `claude -p` command shape.
+coordinator from imported run state. `python3 scripts/de.py run <repo>
+--detach` launches a background supervisor and returns immediately. Omitting
+`--provider` defaults to provider `codex`. `--provider codex` launches a
+`codex exec` command shape explicitly. `--provider claude` launches a
+`claude -p` command shape.
 
 Live `de run` writes `prompts/coordinator-001.md`,
 `logs/coordinator-001.stdout.log`, and
 `logs/coordinator-001.stderr.log`; registers `coordinator-001` in `agents/`
 with status `running`; then records `completed` or `failed` in the agent record
 and emits `coordinator.completed` or `coordinator.failed`.
+Detached `de run --detach` also writes `supervisors/coordinator-001.json`,
+`logs/coordinator-001.supervisor.stdout.log`, and
+`logs/coordinator-001.supervisor.stderr.log`.
 Provider launch argv should pass a short instruction containing the recorded
 prompt snapshot path, rather than embedding the full rendered coordinator prompt
 inline.
@@ -288,6 +296,7 @@ register workers, reviewers, and validators in `agents/`.
 - `python3 scripts/de.py status <repo>` reads the latest run summary.
 - `python3 scripts/de.py status <repo> --run-id <run-id>` reads a selected run.
 - `python3 scripts/de.py run <repo>` launches the latest run's default Codex coordinator.
+- `python3 scripts/de.py run <repo> --detach` launches the latest run's default Codex coordinator in the background and returns immediately.
 - `python3 scripts/de.py run <repo> --run-id <run-id> --provider codex` launches an explicit Codex coordinator.
 - `python3 scripts/de.py run <repo> --run-id <run-id> --provider claude` launches an explicit Claude coordinator.
 - `python3 scripts/de.py run <repo> --dry-run` renders the latest run's default Codex coordinator launch without state writes.

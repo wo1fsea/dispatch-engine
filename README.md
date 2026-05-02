@@ -66,6 +66,7 @@ Target repo smoke checks after importing a plan:
 
 ```bash
 python3 scripts/de.py run <repo> --dry-run
+python3 scripts/de.py run <repo> --detach
 python3 scripts/de.py run <repo> --provider codex --dry-run
 python3 scripts/de.py run <repo> --provider claude --dry-run
 python3 scripts/de.py status <repo>
@@ -73,9 +74,11 @@ python3 scripts/de.py tail <repo>
 ```
 
 `de run <repo>` launches a foreground provider CLI coordinator for the latest
-imported run. Omitting `--provider` defaults to provider `codex`, which uses a
-`codex exec` command shape; `--provider codex` selects that same provider
-explicitly. `--provider claude` uses a Claude coordinator command shape based on
+imported run. `de run <repo> --detach` starts a background supervisor and
+returns immediately, which is the preferred interactive Codex operation mode.
+Omitting `--provider` defaults to provider `codex`, which uses a `codex exec`
+command shape; `--provider codex` selects that same provider explicitly.
+`--provider claude` uses a Claude coordinator command shape based on
 `claude -p`.
 
 Target repo quickstart:
@@ -87,7 +90,9 @@ mkdir -p "$TARGET/.dispatch/plans"
 $EDITOR "$TARGET/.dispatch/plans/plan-001.json"
 python3 "$DE_SKILL/scripts/de.py" init "$TARGET" --plan "$TARGET/.dispatch/plans/plan-001.json"
 python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --dry-run
-python3 "$DE_SKILL/scripts/de.py" run "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --detach
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 ```
@@ -153,8 +158,8 @@ necessary.
 - Respect target repository conventions instead of prescribing a universal spec format.
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
-- Use the runtime for explicit plan import, live coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical orchestration.
-- Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
+- Use the runtime for explicit plan import, foreground or detached coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
+- Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `supervisors/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
 - Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
 - Keep runtime prompt templates centralized in `references/prompts/`.
 - Treat worker output as valid only when a registered worker has a durable report under `.dispatch/runs/<run-id>/reports/`; reviewer evidence belongs under `reviews/`, validator evidence belongs under `validation/`, and missing or malformed evidence is a protocol violation.
