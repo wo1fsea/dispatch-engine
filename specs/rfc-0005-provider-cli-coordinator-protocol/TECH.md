@@ -123,7 +123,7 @@ Defaults:
 - If `--provider` is omitted, use `codex`.
 - `--dry-run` is required for the first implementation wave that introduces the launcher.
 - Dry-run does not start a provider process or mutate project files.
-- Dry-run output must be deterministic enough for tests to assert provider, profile, executable, rendered arguments, prompt path or prompt text marker, run id, and state directory.
+- Dry-run output must be deterministic enough for tests to assert provider, profile, executable, rendered arguments, prompt path marker, run id, and state directory.
 - Dry-run may create no state, or it may write an explicitly marked preview under `.dispatch/runs/<run-id>/artifacts/`; implementation should choose the smaller testable behavior and document it.
 
 Provider profiles resolve provider-specific command syntax. Exact prompt/input/context flags may be finalized during implementation after checking the installed CLI behavior, but the dry-run templates must still expose the intended command shape.
@@ -135,7 +135,7 @@ Codex default profile:
   "provider": "codex",
   "profile": "codex-exec",
   "executable": "codex",
-  "template": ["codex", "exec", "--prompt-file", "{prompt_path}", "--cwd", "{repo_root}"],
+  "template": ["codex", "exec", "--cd", "{repo_root}", "Read and follow the Dispatch Engine coordinator instructions in this file: {prompt_path}"],
   "context": {
     "run_id": "{run_id}",
     "state_dir": "{state_dir}",
@@ -151,7 +151,7 @@ Claude profile:
   "provider": "claude",
   "profile": "claude-p",
   "executable": "claude",
-  "template": ["claude", "-p", "{prompt_text}"],
+  "template": ["claude", "-p", "Read and follow the Dispatch Engine coordinator instructions in this file: {prompt_path}"],
   "context": {
     "repo_root": "{repo_root}",
     "run_id": "{run_id}",
@@ -262,4 +262,3 @@ Manual checks:
 - Risk: Agent registry state may duplicate workstream state. Mitigation: keep workstream files as plan/progress truth and use agent files for execution identity, role, heartbeat, and report paths.
 - Follow-up: Enable live process supervision after dry-run command rendering and state/event protocols are validated.
 - Follow-up: Add external provider profile configuration files only when built-in `codex` and `claude` profiles are no longer enough.
-

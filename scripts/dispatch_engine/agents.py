@@ -37,6 +37,10 @@ def register_agent(
     completed_at: str | None = None,
     report_path: str | None = None,
     log_path: str | None = None,
+    prompt_path: str | None = None,
+    stdout_path: str | None = None,
+    stderr_path: str | None = None,
+    pid: int | None = None,
 ) -> dict[str, Any]:
     """Write a durable agent registry record under agents/<agent-id>.json."""
 
@@ -68,6 +72,14 @@ def register_agent(
         "report_path": report_path or _run_relative_path(run_state_dir, "reports", agent_id, ".json"),
         "log_path": log_path or _run_relative_path(run_state_dir, "logs", agent_id, ".jsonl"),
     }
+    if prompt_path is not None:
+        record["prompt_path"] = prompt_path
+    if stdout_path is not None:
+        record["stdout_path"] = stdout_path
+    if stderr_path is not None:
+        record["stderr_path"] = stderr_path
+    if pid is not None:
+        record["pid"] = pid
     _write_agent(run_state_dir, record)
     return record
 

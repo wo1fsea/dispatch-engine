@@ -10,7 +10,7 @@ Repo-native agent dispatch, with adult supervision.
 
 Dispatch Engine is a runtime-backed Codex skill. The repository root is the installable skill directory, and the local runtime is bundled under `scripts/` so the whole project can be copied or cloned into a Codex skills directory.
 
-Interactive Codex reads a repository's own planning conventions, turns work into an explicit dispatch plan, reviews results, and keeps the user in the loop. The runtime imports that explicit plan, stores durable `.dispatch/` state, exposes status/tail readers, and is the future home of the mechanical scheduler, worker, reviewer, and validation loop.
+Interactive Codex reads a repository's own planning conventions, turns work into an explicit dispatch plan, reviews results, and keeps the user in the loop. The runtime imports that explicit plan, stores durable `.dispatch/` state, exposes status/tail readers, and can launch a foreground provider CLI coordinator for the imported run.
 
 Dispatch Engine-generated non-project runtime content belongs under `.dispatch/` in the target repository. Project files changed for the user's objective stay in the target repository's normal source, test, docs, spec, or configuration paths.
 
@@ -38,12 +38,29 @@ python3 scripts/de.py status .
 python3 scripts/de.py tail .
 ```
 
-`de run <repo> --dry-run` is the current provider CLI coordinator launch
-surface. It renders the selected provider command and coordinator prompt without
-launching a provider process. Omitting `--provider` defaults to provider
-`codex`, which renders a `codex exec` command shape; `--provider codex` renders
-the same shape explicitly. `--provider claude` renders a Claude coordinator
-command shape based on `claude -p`.
+`de run <repo>` launches a foreground provider CLI coordinator for the latest
+imported run. Omitting `--provider` defaults to provider `codex`, which uses a
+`codex exec` command shape; `--provider codex` selects that same provider
+explicitly. `--provider claude` uses a Claude coordinator command shape based on
+`claude -p`.
+
+`de run <repo> --dry-run` renders the selected provider command and coordinator
+prompt without launching a provider process or writing runtime state. Live runs
+write:
+
+```text
+.dispatch/runs/<run-id>/prompts/coordinator-001.md
+.dispatch/runs/<run-id>/logs/coordinator-001.stdout.log
+.dispatch/runs/<run-id>/logs/coordinator-001.stderr.log
+```
+
+Live runs register `coordinator-001` under
+`.dispatch/runs/<run-id>/agents/`, move its status from `running` to
+`completed` or `failed`, and emit `coordinator.started` followed by
+`coordinator.completed` or `coordinator.failed`.
+The provider process receives a short instruction pointing to the recorded
+prompt snapshot path; the full coordinator prompt is not embedded directly in
+the launch command.
 
 Provider CLI coordinators are coordinator-only. They may plan, dispatch,
 monitor, summarize, request decisions, and write Dispatch Engine runtime state,
@@ -59,9 +76,9 @@ should load and render those templates instead of embedding prompt text inline.
 - Respect target repository conventions instead of prescribing a universal spec format.
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
-- Use the runtime for explicit plan import, `.dispatch/` state, event logs, status/tail, and future mechanical orchestration.
-- Use `.dispatch/runs/<run-id>/agents/`, `reports/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
-- Use lifecycle events such as `agent.spawned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
+- Use the runtime for explicit plan import, live coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical orchestration.
+- Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `reports/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
+- Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
 - Keep runtime prompt templates centralized in `references/prompts/`.
 - Support pluggable adapters for worker agents, reviewer agents, validation runners, and status sinks.
 - Keep the runnable runtime bundled inside the skill directory before recommending copy/clone installation.

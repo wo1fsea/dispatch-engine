@@ -24,11 +24,14 @@ Use this reference when changing Dispatch Engine run-state or event-log behavior
       agents/
         coordinator-001.json
         worker-001.json
+      prompts/
+        coordinator-001.md
       reports/
         coordinator-001.json
         worker-001.json
       logs/
-        coordinator-001.jsonl
+        coordinator-001.stdout.log
+        coordinator-001.stderr.log
         worker-001.jsonl
       heartbeats/
         coordinator-001.jsonl
@@ -50,7 +53,7 @@ The latest run is the lexicographically last directory under `.dispatch/runs/`.
 - `repo_root`
 - `state_dir`
 - `objective`
-- `status`: currently `planned` for dry-run plans
+- `status`: imported run status, currently `planned` before live coordinator work starts
 - `created_at`
 - `updated_at`
 - `workstreams`: summary objects for each planned workstream
@@ -86,11 +89,13 @@ created. Pending decision entries include:
 records. Workers, reviewers, and validators must be registered here before
 their implementation, review, or validation output is treated as valid.
 
-`reports/` contains accepted agent reports. `logs/` contains agent log streams.
-`heartbeats/` contains append-only agent heartbeat streams. `artifacts/` is
-reserved for other run-scoped generated artifacts. `reviews/` is reserved for
-reviewer reports and acceptance records. `validation/` is reserved for
-runtime-captured validation commands, outputs, and summaries.
+`prompts/` contains runtime-rendered prompt snapshots. `reports/` contains
+accepted agent reports. `logs/` contains agent log streams and live coordinator
+stdout/stderr captures. `heartbeats/` contains append-only agent heartbeat
+streams. `artifacts/` is reserved for other run-scoped generated artifacts.
+`reviews/` is reserved for reviewer reports and acceptance records.
+`validation/` is reserved for runtime-captured validation commands, outputs,
+and summaries.
 
 Agent registry records include:
 
@@ -106,6 +111,8 @@ Agent registry records include:
 - timestamps, including `started_at`, `updated_at`, `last_heartbeat_at`, and `completed_at`
 - `report_path`
 - `log_path`
+- `prompt_path` when a prompt snapshot is written
+- `stdout_path` and `stderr_path` when a live provider process is supervised
 
 Coordinators are coordinator-only. A coordinator may write `.dispatch/` runtime
 state, assign workstreams, emit events, keep heartbeats, write reports, and
@@ -165,13 +172,13 @@ Optional fields:
 
 `coordinator.completed`
 
-- Reserved for live process supervision when a coordinator process exits successfully or reports completion.
-- Payload should include `agent_id` and report location when available.
+- Written when a live coordinator process exits successfully.
+- Payload includes `agent_id`, `provider`, `profile`, `exit_code`, `stdout_path`, and `stderr_path`.
 
 `coordinator.failed`
 
-- Reserved for live process supervision when a coordinator launch or process fails.
-- Payload should include `agent_id` when known and failure reason.
+- Written when a live coordinator launch fails or the process exits non-zero.
+- Payload includes `agent_id`, `provider`, `profile`, `exit_code`, `stdout_path`, `stderr_path`, and `reason`.
 
 `agent.spawned`
 
@@ -248,12 +255,25 @@ Optional fields:
 `plan.created` is superseded by `run.created`. Treat it as historical only
 unless a compatibility fixture explicitly requires it.
 
-## Provider Coordinator Dry Run
+## Provider Coordinator Run
 
-`python3 scripts/de.py run <repo> --dry-run` renders a provider CLI coordinator
-launch from imported run state. Omitting `--provider` defaults to provider
-`codex`. `--provider codex` renders a `codex exec` command shape explicitly.
-`--provider claude` renders a `claude -p` command shape.
+`python3 scripts/de.py run <repo>` launches a foreground provider CLI
+coordinator from imported run state. Omitting `--provider` defaults to provider
+`codex`. `--provider codex` launches a `codex exec` command shape explicitly.
+`--provider claude` launches a `claude -p` command shape.
+
+Live `de run` writes `prompts/coordinator-001.md`,
+`logs/coordinator-001.stdout.log`, and
+`logs/coordinator-001.stderr.log`; registers `coordinator-001` in `agents/`
+with status `running`; then records `completed` or `failed` in the agent record
+and emits `coordinator.completed` or `coordinator.failed`.
+Provider launch argv should pass a short instruction containing the recorded
+prompt snapshot path, rather than embedding the full rendered coordinator prompt
+inline.
+
+`python3 scripts/de.py run <repo> --dry-run` renders the same provider CLI
+coordinator command and prompt from imported run state without launching a
+provider process or writing runtime state.
 
 Dry-run output renders the command and coordinator prompt marker or preview, but
 does not launch a provider process and writes no project-file changes. The
@@ -264,9 +284,12 @@ register workers, reviewers, and validators in `agents/`.
 
 - `python3 scripts/de.py status <repo>` reads the latest run summary.
 - `python3 scripts/de.py status <repo> --run-id <run-id>` reads a selected run.
-- `python3 scripts/de.py run <repo> --dry-run` renders the latest run's default Codex coordinator launch.
-- `python3 scripts/de.py run <repo> --run-id <run-id> --provider codex --dry-run` renders an explicit Codex coordinator launch.
-- `python3 scripts/de.py run <repo> --run-id <run-id> --provider claude --dry-run` renders an explicit Claude coordinator launch.
+- `python3 scripts/de.py run <repo>` launches the latest run's default Codex coordinator.
+- `python3 scripts/de.py run <repo> --run-id <run-id> --provider codex` launches an explicit Codex coordinator.
+- `python3 scripts/de.py run <repo> --run-id <run-id> --provider claude` launches an explicit Claude coordinator.
+- `python3 scripts/de.py run <repo> --dry-run` renders the latest run's default Codex coordinator launch without state writes.
+- `python3 scripts/de.py run <repo> --run-id <run-id> --provider codex --dry-run` renders an explicit Codex coordinator launch without state writes.
+- `python3 scripts/de.py run <repo> --run-id <run-id> --provider claude --dry-run` renders an explicit Claude coordinator launch without state writes.
 - `python3 scripts/de.py tail <repo>` prints events from the latest run.
 - `python3 scripts/de.py tail <repo> --run-id <run-id>` prints events from a selected run.
 

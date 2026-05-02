@@ -45,9 +45,29 @@ def initialize_run_dir(path: Path) -> None:
     (path / "agents").mkdir()
     (path / "reports").mkdir()
     (path / "logs").mkdir()
+    (path / "prompts").mkdir()
     (path / "heartbeats").mkdir()
     (path / "artifacts").mkdir()
     (path / "reviews").mkdir()
     (path / "validation").mkdir()
     (path / "events.jsonl").write_text("")
     (path / "decisions.jsonl").write_text("")
+
+
+def ensure_run_runtime_dirs(path: Path) -> None:
+    for name in (
+        "workstreams",
+        "agents",
+        "reports",
+        "logs",
+        "prompts",
+        "heartbeats",
+        "artifacts",
+        "reviews",
+        "validation",
+    ):
+        (path / name).mkdir(exist_ok=True)
+    for name in ("events.jsonl", "decisions.jsonl"):
+        file_path = path / name
+        if not file_path.exists():
+            file_path.write_text("", encoding="utf-8")

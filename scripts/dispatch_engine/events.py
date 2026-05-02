@@ -48,6 +48,60 @@ def coordinator_started(
     )
 
 
+def coordinator_completed(
+    event_log: Path,
+    *,
+    agent_id: str,
+    provider: str,
+    profile: str,
+    exit_code: int,
+    stdout_path: str,
+    stderr_path: str,
+    actor: str = "dispatch-engine",
+) -> None:
+    append_event(
+        event_log,
+        "coordinator.completed",
+        actor=actor,
+        payload={
+            "agent_id": agent_id,
+            "provider": provider,
+            "profile": profile,
+            "exit_code": exit_code,
+            "stdout_path": stdout_path,
+            "stderr_path": stderr_path,
+        },
+    )
+
+
+def coordinator_failed(
+    event_log: Path,
+    *,
+    agent_id: str,
+    provider: str,
+    profile: str,
+    exit_code: int | None,
+    stdout_path: str,
+    stderr_path: str,
+    reason: str,
+    actor: str = "dispatch-engine",
+) -> None:
+    append_event(
+        event_log,
+        "coordinator.failed",
+        actor=actor,
+        payload={
+            "agent_id": agent_id,
+            "provider": provider,
+            "profile": profile,
+            "exit_code": exit_code,
+            "stdout_path": stdout_path,
+            "stderr_path": stderr_path,
+            "reason": reason,
+        },
+    )
+
+
 def agent_spawned(
     event_log: Path,
     *,

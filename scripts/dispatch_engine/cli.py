@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from . import __version__
-from .coordinators import CoordinatorLaunchError, render_run_dry_run
+from .coordinators import CoordinatorLaunchError, launch_run_coordinator, render_run_dry_run
 from .plan_schema import PlanValidationError, import_dispatch_plan
 from .state import run_status, tail_events
 
@@ -84,21 +84,19 @@ def main(argv: list[str] | None = None) -> int:
         return _print(result, args.json)
 
     if args.command == "run":
-        if not args.dry_run:
-            return _print(
-                {
-                    "kind": "error",
-                    "status": "dry_run_required",
-                    "summary": "de run currently requires --dry-run.",
-                },
-                args.json,
-            )
         try:
-            result = render_run_dry_run(
-                Path(args.target),
-                run_id=args.run_id,
-                provider=args.provider,
-            )
+            if args.dry_run:
+                result = render_run_dry_run(
+                    Path(args.target),
+                    run_id=args.run_id,
+                    provider=args.provider,
+                )
+            else:
+                result = launch_run_coordinator(
+                    Path(args.target),
+                    run_id=args.run_id,
+                    provider=args.provider,
+                )
         except CoordinatorLaunchError as exc:
             return _print(
                 {
@@ -124,6 +122,8 @@ def _print(payload: dict, as_json: bool) -> int:
 
     if as_json:
         print(json.dumps(payload, indent=2, sort_keys=True))
+        if payload.get("kind") == "run_live":
+            return 0 if payload.get("exit_code") == 0 else 1
         return 0
 
     kind = payload.get("kind")
@@ -166,6 +166,18 @@ def _print(payload: dict, as_json: bool) -> int:
             for warning in payload["warnings"]:
                 print(f"- {warning}")
         return 0
+
+    if kind == "run_live":
+        print(f"Provider: {payload['provider']} ({payload['profile']})")
+        print(f"Run: {payload['run_id']}")
+        print(f"State: {payload['state_dir']}")
+        print(f"Exit: {payload['exit_code']}")
+        print(f"Prompt: {payload['prompt_path']}")
+        print(f"Stdout: {payload['stdout_path']}")
+        print(f"Stderr: {payload['stderr_path']}")
+        if payload.get("failure_reason"):
+            print(f"Failure: {payload['failure_reason']}")
+        return 0 if payload.get("exit_code") == 0 else 1
 
     if "version" in payload:
         print(payload["version"])
