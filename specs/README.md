@@ -25,3 +25,4 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0002-skill-first-packaging`: root-level runtime-backed skill packaging.
 - `rfc-0003-runtime-state-and-tail`: self-dogfood spec for durable run state, status, tail, inspect, and plan improvements.
 - `rfc-0004-explicit-plan-orchestrator-boundary`: corrective spec that replaces runtime-owned inspect/heuristic plan with Codex-owned discovery, explicit dispatch plans, and `.dispatch/` runtime storage.
+- `rfc-0005-provider-cli-coordinator-protocol`: provider CLI coordinator launch protocol with Codex as the default provider, explicit Claude provider support, coordinator-only boundaries, observable registered subagents, agent state, events, heartbeats, and status reporting.

@@ -21,6 +21,18 @@ Use this reference when changing Dispatch Engine run-state or event-log behavior
       decisions.jsonl
       workstreams/
         01-implementation.json
+      agents/
+        coordinator-001.json
+        worker-001.json
+      reports/
+        coordinator-001.json
+        worker-001.json
+      logs/
+        coordinator-001.jsonl
+        worker-001.jsonl
+      heartbeats/
+        coordinator-001.jsonl
+        worker-001.jsonl
       artifacts/
       reviews/
       validation/
@@ -70,7 +82,34 @@ created. Pending decision entries include:
 - `created_at`
 - `updated_at`
 
-`artifacts/` is reserved for run-scoped generated artifacts. `reviews/` is reserved for reviewer reports and acceptance records. `validation/` is reserved for runtime-captured validation commands, outputs, and summaries.
+`agents/` contains durable coordinator, worker, reviewer, and validator registry
+records. Workers, reviewers, and validators must be registered here before
+their implementation, review, or validation output is treated as valid.
+
+`reports/` contains accepted agent reports. `logs/` contains agent log streams.
+`heartbeats/` contains append-only agent heartbeat streams. `artifacts/` is
+reserved for other run-scoped generated artifacts. `reviews/` is reserved for
+reviewer reports and acceptance records. `validation/` is reserved for
+runtime-captured validation commands, outputs, and summaries.
+
+Agent registry records include:
+
+- `agent_id`
+- `role`: `coordinator`, `worker`, `reviewer`, or `validator`
+- `provider`: currently `codex` or `claude`
+- `profile`: provider profile such as `codex-exec` or `claude-p`
+- `status`
+- `run_id`
+- `workstream` when assigned
+- `assigned_files`
+- `allowed_write_roots`
+- timestamps, including `started_at`, `updated_at`, `last_heartbeat_at`, and `completed_at`
+- `report_path`
+- `log_path`
+
+Coordinators are coordinator-only. A coordinator may write `.dispatch/` runtime
+state, assign workstreams, emit events, keep heartbeats, write reports, and
+request decisions. It must not directly implement project-file changes.
 
 Do not commit `.dispatch/` state.
 
@@ -119,6 +158,64 @@ Optional fields:
 - Includes `workstream`.
 - Payload includes `title`.
 
+`coordinator.started`
+
+- Written when a provider CLI coordinator registry record is created and launch is attempted.
+- Payload includes `agent_id`, `provider`, and `profile`.
+
+`coordinator.completed`
+
+- Reserved for live process supervision when a coordinator process exits successfully or reports completion.
+- Payload should include `agent_id` and report location when available.
+
+`coordinator.failed`
+
+- Reserved for live process supervision when a coordinator launch or process fails.
+- Payload should include `agent_id` when known and failure reason.
+
+`agent.spawned`
+
+- Written when a worker, reviewer, or validator is registered in `.dispatch/runs/<run-id>/agents/`.
+- Includes `workstream` when the agent is assigned to a workstream.
+- Payload includes `agent_id`, `role`, `provider`, and `profile`.
+
+`agent.heartbeat`
+
+- Written when a registered agent heartbeat is recorded under `heartbeats/`.
+- Includes `workstream` when the agent is assigned to a workstream.
+- Payload includes `agent_id` and `status`.
+
+`workstream.assigned`
+
+- Written when a workstream is assigned to a registered implementation agent.
+- Includes `workstream`.
+- Payload includes `agent_id`.
+
+`agent.completed`
+
+- Written when an agent report is accepted into runtime state.
+- Includes `workstream` when the agent is assigned to a workstream.
+- Payload includes `agent_id` and may include `report_path`.
+
+`agent.failed`
+
+- Written when an agent exits with failure, reports failure, or misses the heartbeat timeout.
+- Includes `workstream` when the agent is assigned to a workstream.
+- Payload includes `agent_id` and `reason`.
+
+`protocol.violation`
+
+- Written when Dispatch Engine detects a coordinator-only, file-scope,
+  unregistered-agent, or state-contract violation.
+- Includes `workstream` when the violation applies to a workstream.
+- Payload includes `violation` and `details`.
+
+`decision.requested`
+
+- Written when a coordinator or runtime requests user input before continuing.
+- Includes `workstream` when the decision applies to a workstream.
+- Payload includes `decision_id`, `question`, and optional `reason`.
+
 `workstream.scheduled`
 
 - Written when the future scheduler marks a workstream ready for a worker.
@@ -151,11 +248,28 @@ Optional fields:
 `plan.created` is superseded by `run.created`. Treat it as historical only
 unless a compatibility fixture explicitly requires it.
 
+## Provider Coordinator Dry Run
+
+`python3 scripts/de.py run <repo> --dry-run` renders a provider CLI coordinator
+launch from imported run state. Omitting `--provider` defaults to provider
+`codex`. `--provider codex` renders a `codex exec` command shape explicitly.
+`--provider claude` renders a `claude -p` command shape.
+
+Dry-run output renders the command and coordinator prompt marker or preview, but
+does not launch a provider process and writes no project-file changes. The
+coordinator prompt states the coordinator-only boundary and the requirement to
+register workers, reviewers, and validators in `agents/`.
+
 ## CLI Readers
 
 - `python3 scripts/de.py status <repo>` reads the latest run summary.
 - `python3 scripts/de.py status <repo> --run-id <run-id>` reads a selected run.
+- `python3 scripts/de.py run <repo> --dry-run` renders the latest run's default Codex coordinator launch.
+- `python3 scripts/de.py run <repo> --run-id <run-id> --provider codex --dry-run` renders an explicit Codex coordinator launch.
+- `python3 scripts/de.py run <repo> --run-id <run-id> --provider claude --dry-run` renders an explicit Claude coordinator launch.
 - `python3 scripts/de.py tail <repo>` prints events from the latest run.
 - `python3 scripts/de.py tail <repo> --run-id <run-id>` prints events from a selected run.
 
-Both `status` and `tail` support `--json`.
+`run`, `status`, and `tail` support `--json`. `status --json` includes
+structured `agents`, `agent_counts`, `workstream_assignments`,
+`heartbeat_summary`, and `protocol_violations`.

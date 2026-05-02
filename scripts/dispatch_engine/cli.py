@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from . import __version__
+from .coordinators import CoordinatorLaunchError, render_run_dry_run
 from .plan_schema import PlanValidationError, import_dispatch_plan
 from .state import run_status, tail_events
 
@@ -36,6 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     tail_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     tail_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
     _add_json_flag(tail_parser)
+
+    run_parser = subparsers.add_parser("run", help="Render or launch a provider CLI coordinator.")
+    run_parser.add_argument("target", help="Repository path containing .dispatch state.")
+    run_parser.add_argument("--run-id", help="Use a specific run id instead of the latest run.")
+    run_parser.add_argument("--provider", default="codex", help="Coordinator provider: codex or claude.")
+    run_parser.add_argument("--dry-run", action="store_true", help="Render without launching a provider.")
+    _add_json_flag(run_parser)
 
     return parser
 
@@ -75,6 +83,33 @@ def main(argv: list[str] | None = None) -> int:
         result = tail_events(Path(args.target), run_id=args.run_id)
         return _print(result, args.json)
 
+    if args.command == "run":
+        if not args.dry_run:
+            return _print(
+                {
+                    "kind": "error",
+                    "status": "dry_run_required",
+                    "summary": "de run currently requires --dry-run.",
+                },
+                args.json,
+            )
+        try:
+            result = render_run_dry_run(
+                Path(args.target),
+                run_id=args.run_id,
+                provider=args.provider,
+            )
+        except CoordinatorLaunchError as exc:
+            return _print(
+                {
+                    "kind": "error",
+                    "status": "coordinator_launch_error",
+                    "summary": str(exc),
+                },
+                args.json,
+            )
+        return _print(result, args.json)
+
     parser.error(f"unknown command: {args.command}")
     return 2
 
@@ -106,6 +141,7 @@ def _print(payload: dict, as_json: bool) -> int:
             print("Workstreams:")
             for status, count in sorted(payload["workstream_counts"].items()):
                 print(f"- {status}: {count}")
+            _print_agent_status(payload)
         return 0
 
     if kind == "tail":
@@ -117,9 +153,71 @@ def _print(payload: dict, as_json: bool) -> int:
             print(f"{event['ts']} {event['type']}{workstream}")
         return 0
 
+    if kind == "run_dry_run":
+        print(f"Provider: {payload['provider']} ({payload['profile']})")
+        print(f"Executable: {payload['executable']}")
+        print(f"Run: {payload['run_id']}")
+        print(f"Repo: {payload['repo_root']}")
+        print(f"State: {payload['state_dir']}")
+        print(f"Argv: {json.dumps(payload['argv'])}")
+        print(f"Prompt: {payload['prompt_path']}")
+        if payload.get("warnings"):
+            print("Warnings:")
+            for warning in payload["warnings"]:
+                print(f"- {warning}")
+        return 0
+
     if "version" in payload:
         print(payload["version"])
         return 0
 
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
+
+
+def _print_agent_status(payload: dict) -> None:
+    agent_counts = payload.get("agent_counts", {})
+    role_counts = agent_counts.get("by_role", {})
+    status_counts = agent_counts.get("by_status", {})
+    total_agents = sum(role_counts.values())
+    if total_agents == 0:
+        print("Agents: none")
+        return
+
+    role_text = _format_counts(role_counts)
+    status_text = _format_counts(status_counts)
+    print(f"Agents: total {total_agents}; roles {role_text}; statuses {status_text}")
+
+    coordinator = payload.get("coordinator")
+    if coordinator:
+        heartbeat = coordinator.get("last_heartbeat_at") or "missing heartbeat"
+        print(
+            "Coordinator: "
+            f"{coordinator.get('provider')}/{coordinator.get('profile')} "
+            f"{coordinator.get('status')} ({heartbeat})"
+        )
+
+    heartbeat_summary = payload.get("heartbeat_summary", {})
+    print(
+        "Heartbeats: "
+        f"{heartbeat_summary.get('with_heartbeat', 0)} present, "
+        f"{heartbeat_summary.get('missing_heartbeat', 0)} missing"
+    )
+
+    assignments = payload.get("workstream_assignments", [])
+    if assignments:
+        rendered = [
+            f"{item['workstream']} -> {item['agent_id']} ({item['role']} {item['status']})"
+            for item in assignments
+        ]
+        print(f"Assignments: {'; '.join(rendered)}")
+
+    violation_count = payload.get("protocol_violations", {}).get("count", 0)
+    if violation_count:
+        print(f"Protocol violations: {violation_count}")
+
+
+def _format_counts(counts: dict) -> str:
+    if not counts:
+        return "none"
+    return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))

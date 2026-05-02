@@ -30,9 +30,25 @@ Use:
 ```bash
 python scripts/de.py --help
 python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json
+python scripts/de.py run <repo> --dry-run
+python scripts/de.py run <repo> --provider codex --dry-run
+python scripts/de.py run <repo> --provider claude --dry-run
 python scripts/de.py status <repo>
 python scripts/de.py tail <repo>
 ```
+
+`de run <repo> --dry-run` renders a provider CLI coordinator launch without
+starting a provider process. When `--provider` is omitted, the runtime uses
+provider `codex` and renders a Codex CLI command shape based on `codex exec`.
+`--provider codex` renders the same provider/profile explicitly.
+`--provider claude` renders a Claude CLI command shape based on `claude -p`.
+Dry-run output includes the resolved command, run id, state directory, and
+coordinator prompt marker or preview; it does not launch Codex, Claude, or any
+other provider process.
+
+Runtime prompt templates are centralized under `references/prompts/`. Do not
+embed provider, coordinator, worker, reviewer, or validator prompt text directly
+in runtime modules.
 
 ## Operating Flow
 
@@ -40,11 +56,36 @@ python scripts/de.py tail <repo>
 2. Use interactive Codex judgment to summarize the repository rules, planning basis, validation strategy, workstreams, dependencies, write scopes, and pending decisions.
 3. Write any Dispatch Engine-generated plan file under `.dispatch/plans/` in the target repository.
 4. Import the explicit plan into runtime state with `python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json`.
-5. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
-6. Run or resume the future Dispatch Engine orchestrator loop from imported plan state.
-7. Monitor status through CLI output and `.dispatch/runs/` files, not through chat memory alone.
-8. Resolve pending decisions explicitly before continuing blocked work.
-9. Record validation evidence before claiming a run is complete.
+5. Render the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
+6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
+7. Run or resume the future Dispatch Engine orchestrator loop from imported plan state.
+8. Monitor status through CLI output and `.dispatch/runs/` files, not through chat memory alone.
+9. Resolve pending decisions explicitly before continuing blocked work.
+10. Record validation evidence before claiming a run is complete.
+
+## Coordinator And Agent Protocol
+
+Provider CLI processes are coordinators only. A coordinator may plan, dispatch,
+monitor, review, summarize, request decisions, and write Dispatch Engine runtime
+state under `.dispatch/`; it must not directly implement project-file changes.
+Project implementation belongs to registered workers, reviewers, or validators.
+
+Workers, reviewers, and validators must be registered before their output is
+treated as valid. Registry records live under:
+
+```text
+.dispatch/runs/<run-id>/agents/
+.dispatch/runs/<run-id>/reports/
+.dispatch/runs/<run-id>/logs/
+.dispatch/runs/<run-id>/heartbeats/
+```
+
+`de status` reads these files to report coordinator provider/profile/status,
+agent counts by role and status, active assignments, heartbeat counts, pending
+decisions, and protocol violations. Lifecycle events include
+`coordinator.started`, `agent.spawned`, `agent.heartbeat`,
+`workstream.assigned`, `agent.completed`, `agent.failed`,
+`protocol.violation`, and `decision.requested`.
 
 ## Packaging Rule
 
@@ -63,3 +104,4 @@ If runtime code has moved or been rebuilt elsewhere, copy or vendor the current 
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.
 - Read `references/orchestrator-loop.md` when designing the future runtime scheduler, worker, reviewer, validation, and status/tail loop.
+- Read `references/prompts/` when changing runtime prompt templates.

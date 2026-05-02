@@ -42,6 +42,10 @@ def resolve_run_dir(repo_root: Path, run_id: str | None = None) -> Path | None:
 def initialize_run_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=False)
     (path / "workstreams").mkdir()
+    (path / "agents").mkdir()
+    (path / "reports").mkdir()
+    (path / "logs").mkdir()
+    (path / "heartbeats").mkdir()
     (path / "artifacts").mkdir()
     (path / "reviews").mkdir()
     (path / "validation").mkdir()

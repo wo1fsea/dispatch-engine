@@ -31,9 +31,28 @@ Basic smoke checks:
 ```bash
 python3 scripts/de.py --help
 python3 scripts/de.py version
+python3 scripts/de.py run . --dry-run
+python3 scripts/de.py run . --provider codex --dry-run
+python3 scripts/de.py run . --provider claude --dry-run
 python3 scripts/de.py status .
 python3 scripts/de.py tail .
 ```
+
+`de run <repo> --dry-run` is the current provider CLI coordinator launch
+surface. It renders the selected provider command and coordinator prompt without
+launching a provider process. Omitting `--provider` defaults to provider
+`codex`, which renders a `codex exec` command shape; `--provider codex` renders
+the same shape explicitly. `--provider claude` renders a Claude coordinator
+command shape based on `claude -p`.
+
+Provider CLI coordinators are coordinator-only. They may plan, dispatch,
+monitor, summarize, request decisions, and write Dispatch Engine runtime state,
+but they must not directly implement project-file changes. Workers, reviewers,
+and validators must be registered in `.dispatch/runs/<run-id>/agents/` before
+their implementation, review, or validation output is accepted.
+
+Runtime prompt templates live under `references/prompts/`. Runtime modules
+should load and render those templates instead of embedding prompt text inline.
 
 ## Current Direction
 
@@ -41,6 +60,9 @@ python3 scripts/de.py tail .
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
 - Use the runtime for explicit plan import, `.dispatch/` state, event logs, status/tail, and future mechanical orchestration.
+- Use `.dispatch/runs/<run-id>/agents/`, `reports/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
+- Use lifecycle events such as `agent.spawned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
+- Keep runtime prompt templates centralized in `references/prompts/`.
 - Support pluggable adapters for worker agents, reviewer agents, validation runners, and status sinks.
 - Keep the runnable runtime bundled inside the skill directory before recommending copy/clone installation.
 
