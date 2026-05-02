@@ -9,6 +9,10 @@ Use this skill to operate the bundled Dispatch Engine runtime from a repository 
 
 Dispatch Engine is a skill-first project: the skill root contains the operator instructions, the runnable local CLI, runtime modules, and reference protocols. A user should be able to clone or copy this directory into their Codex skills directory and have the runtime available through the bundled scripts.
 
+The bundled `de` CLI is a Codex-facing machine interface, not the human user
+interface. Humans talk to interactive Codex; interactive Codex calls `de`,
+reads JSON/file state, and explains progress or decisions in conversation.
+
 For install, target repo quickstart, progress watching, git ignore guidance,
 and troubleshooting, read `references/operator-guide.md`.
 
@@ -67,6 +71,14 @@ without starting Codex, Claude, or any other provider process, and without
 writing run state. Dry-run output includes the resolved command, run id, state
 directory, and coordinator prompt marker or preview.
 
+Detached execution does not make the foreground chat automatically aware of
+background changes. Interactive Codex should either check `de status --json`
+when the user asks, or use a host-provided thread heartbeat/wakeup mechanism
+when available. In this Codex desktop host, that means creating or suggesting a
+heartbeat automation for long-running detached work. The heartbeat wakes the
+current thread; Codex then reads Dispatch Engine state and reports material
+changes. Dispatch Engine itself does not send chat messages or wake the thread.
+
 Live runs write a prompt snapshot and process logs under the target repository's
 run state:
 
@@ -106,9 +118,10 @@ files, allowed write roots, validation expectations, and report path.
 5. Preview the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
-8. Monitor status through CLI output and `.dispatch/runs/` files, not through chat memory alone.
-9. Resolve pending decisions explicitly before continuing blocked work.
-10. Record validation evidence before claiming a run is complete.
+8. For long-running detached work, create or suggest a host-layer heartbeat monitor when the current Codex host supports thread wakeups. If no heartbeat exists, state that Codex will check the latest status on the next user message.
+9. Monitor status through JSON CLI output and `.dispatch/runs/` files, not through chat memory alone.
+10. Resolve pending decisions explicitly before continuing blocked work.
+11. Record validation evidence before claiming a run is complete.
 
 ## Coordinator And Agent Protocol
 
@@ -171,6 +184,7 @@ repo.
 
 - Read `references/operator-guide.md` when installing the skill or operating it against a target repo.
 - Read `references/operator-flow.md` when supervising a run from interactive Codex.
+- Read `specs/rfc-0015-codex-heartbeat-observation/` when changing detached-run observation, heartbeat wakeup guidance, Codex-facing status/actions, or decision-resolution surfaces.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.
 - Read `references/orchestrator-loop.md` when designing coordinator-spawned worker, reviewer, validator, evidence, and status/tail flows.

@@ -10,7 +10,11 @@ Repo-native agent dispatch, with adult supervision.
 
 Dispatch Engine is a runtime-backed Codex skill. The repository root is the installable skill directory, and the local runtime is bundled under `scripts/` so the whole project can be copied or cloned into a Codex skills directory.
 
-Interactive Codex reads a repository's own planning conventions, turns work into an explicit dispatch plan, reviews results, and keeps the user in the loop. The runtime imports that explicit plan, stores durable `.dispatch/` state, exposes status/tail readers, and can launch a foreground provider CLI coordinator for the imported run.
+Interactive Codex reads a repository's own planning conventions, turns work into an explicit dispatch plan, reviews results, and keeps the user in the loop. The runtime imports that explicit plan, stores durable `.dispatch/` state, exposes status/tail readers, and can launch a foreground or detached provider CLI coordinator for the imported run.
+
+The `de` CLI is a Codex-facing machine interface, not the human user interface.
+Humans talk to interactive Codex; Codex calls `de`, reads JSON/file state, and
+explains progress or decisions.
 
 Dispatch Engine-generated non-project runtime content belongs under `.dispatch/` in the target repository. Project files changed for the user's objective stay in the target repository's normal source, test, docs, spec, or configuration paths.
 
@@ -80,6 +84,12 @@ Omitting `--provider` defaults to provider `codex`, which uses a `codex exec`
 command shape; `--provider codex` selects that same provider explicitly.
 `--provider claude` uses a Claude coordinator command shape based on
 `claude -p`.
+
+Detached runs keep the chat responsive, but they do not automatically wake the
+foreground Codex chat. For long-running work, interactive Codex should create or
+suggest a host-layer thread heartbeat when available. The heartbeat wakes Codex,
+which then reads `de status --json` and reports material changes. Without a
+heartbeat, Codex checks status when the user next asks.
 
 Target repo quickstart:
 
@@ -159,6 +169,7 @@ necessary.
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
 - Use the runtime for explicit plan import, foreground or detached coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
+- Treat host heartbeat/wakeup automation as the observation trigger for proactive chat updates; Dispatch Engine writes queryable state but does not wake or message the chat directly.
 - Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `supervisors/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
 - Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
 - Keep runtime prompt templates centralized in `references/prompts/`.
