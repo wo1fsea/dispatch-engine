@@ -27,3 +27,10 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0004-explicit-plan-orchestrator-boundary`: corrective spec that replaces runtime-owned inspect/heuristic plan with Codex-owned discovery, explicit dispatch plans, and `.dispatch/` runtime storage.
 - `rfc-0005-provider-cli-coordinator-protocol`: provider CLI coordinator launch protocol with Codex as the default provider, explicit Claude provider support, coordinator-only boundaries, observable registered subagents, agent state, events, heartbeats, and status reporting.
 - `rfc-0006-live-coordinator-supervision`: validated foreground provider CLI coordinator process supervision with prompt snapshots, stdout/stderr logs, and coordinator completion/failure events.
+- `rfc-0007-worker-adapter-protocol`: active helper-first worker adapter protocol for registered implementation agents, centralized worker prompt snapshots, durable worker reports, status visibility, and conservative protocol violations.
+- `rfc-0008-coordinator-spawn-contract`: validated coordinator-spawn contract clarifying that the provider coordinator owns subagent spawn decisions while Dispatch Engine owns durable registration, prompt snapshot, heartbeat, report, event, status, and violation state.
+- `rfc-0009-review-validator-report-protocol`: ready skill-first reviewer/validator evidence protocol with minimal durable report validation.
+- `rfc-0010-workstream-acceptance-guidance`: ready skill-first workstream state and acceptance guidance with minimal evidence checks.
+- `rfc-0011-decision-blocker-protocol`: ready decision/blocker protocol for durable operator questions and pending-decision visibility.
+- `rfc-0012-dogfood-runbook-fixture`: ready repeatable fake-provider dogfood runbook and fixture path.
+- `rfc-0013-skill-install-operator-docs`: validated install, quickstart, and troubleshooting documentation path for the first usable version.

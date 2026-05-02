@@ -10,7 +10,12 @@ from pathlib import Path
 from dispatch_engine.cli import main
 from dispatch_engine.coordinators import CoordinatorLaunchError, render_run_dry_run
 from dispatch_engine.plan_schema import import_dispatch_plan
-from dispatch_engine.prompts import COORDINATOR_PROTOCOL_TEMPLATE, prompt_template_path
+from dispatch_engine.prompts import (
+    COORDINATOR_PROTOCOL_TEMPLATE,
+    coordinator_prompt_instruction,
+    prompt_template_path,
+    write_coordinator_prompt_snapshot,
+)
 
 
 class RunDryRunTests(unittest.TestCase):
@@ -56,6 +61,23 @@ class RunDryRunTests(unittest.TestCase):
         self.assertEqual(template_path.name, "coordinator-protocol.md")
         self.assertIn("references/prompts", str(template_path))
         self.assertIn("Coordinator-Only Behavior", template_path.read_text(encoding="utf-8"))
+
+    def test_coordinator_prompt_snapshot_and_provider_instruction_are_centralized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo, plan_id="plan-001", objective="snapshot objective")
+            state_dir = Path(run["state_dir"])
+
+            prompt_path = write_coordinator_prompt_snapshot(state_dir, "central coordinator prompt")
+            instruction = coordinator_prompt_instruction(prompt_path)
+
+            self.assertEqual(prompt_path, state_dir / "prompts" / "coordinator-001.md")
+            self.assertEqual(prompt_path.read_text(encoding="utf-8"), "central coordinator prompt")
+            self.assertEqual(
+                instruction,
+                "Read and follow the Dispatch Engine coordinator instructions in this file: "
+                f"{prompt_path}",
+            )
 
     def test_explicit_codex_and_claude_render_expected_command_shapes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

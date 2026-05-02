@@ -1,0 +1,180 @@
+---
+language: en-US
+audience: mixed
+doc_type: runbook
+---
+
+# Operator Guide
+
+Use this guide when installing Dispatch Engine as a Codex skill and operating it against a target repository.
+
+## Install Shape
+
+Dispatch Engine is distributed as the skill directory itself. The repository root contains `SKILL.md`, reference guidance, prompt templates, and the bundled runtime under `scripts/`. There is no separate package installer for the current usable version.
+
+Install by cloning or copying the whole repository root into a Codex skills directory, commonly `$CODEX_HOME/skills/dispatch-engine` or `~/.codex/skills/dispatch-engine` when `CODEX_HOME` is unset.
+
+Clone install:
+
+```bash
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+mkdir -p "$CODEX_HOME/skills"
+git clone <dispatch-engine-repo-url> "$CODEX_HOME/skills/dispatch-engine"
+cd "$CODEX_HOME/skills/dispatch-engine"
+python3 scripts/de.py --help
+python3 scripts/de.py version
+```
+
+Copy install from an existing checkout:
+
+```bash
+SOURCE=/path/to/dispatch-engine
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+mkdir -p "$CODEX_HOME/skills/dispatch-engine"
+rsync -a --delete \
+  --exclude '.git/' \
+  --exclude '.dispatch/' \
+  "$SOURCE/" "$CODEX_HOME/skills/dispatch-engine/"
+cd "$CODEX_HOME/skills/dispatch-engine"
+python3 scripts/de.py --help
+python3 scripts/de.py version
+```
+
+Keep the runtime in the skill repo. If `scripts/de.py` or `scripts/dispatch_engine/` is missing, the skill is not installable yet.
+
+## Target Repo Quickstart
+
+Set paths once:
+
+```bash
+DE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/dispatch-engine"
+TARGET=/path/to/target-repo
+```
+
+Interactive Codex stays outside the runtime and remains the user-facing operator. It reads the target repo's local instructions, keeps talking with the user, prepares an explicit dispatch plan, asks for decisions, reviews results, and checks progress with `status` and `tail`.
+
+Create a plan file under the target repo:
+
+```bash
+mkdir -p "$TARGET/.dispatch/plans"
+$EDITOR "$TARGET/.dispatch/plans/plan-001.json"
+```
+
+Minimum plan shape:
+
+```json
+{
+  "schema_version": 1,
+  "plan_id": "plan-001",
+  "objective": "Describe the user-visible objective.",
+  "workstreams": [
+    {
+      "id": "01-docs",
+      "title": "Update docs",
+      "scope": "Concrete work assigned to this worker.",
+      "files": ["README.md"],
+      "depends_on": [],
+      "validation": ["python3 scripts/de.py --help"]
+    }
+  ],
+  "decisions": []
+}
+```
+
+Import the plan:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" init "$TARGET" --plan "$TARGET/.dispatch/plans/plan-001.json"
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
+```
+
+Preview coordinator launch before starting a provider:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --dry-run
+python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --provider codex --dry-run
+python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --provider claude --dry-run
+```
+
+Start a live foreground coordinator:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" run "$TARGET"
+```
+
+Omitting `--provider` defaults to provider `codex`, using a `codex exec` command shape. `--provider codex` selects the same provider explicitly. `--provider claude` is optional and uses a Claude CLI command shape based on `claude -p`.
+
+The provider process launched by `de run` is a coordinator only. It may plan, dispatch, monitor, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`, but it must not directly implement project-file changes. Project implementation belongs to registered workers, reviewers, or validators using provider-native spawn mechanisms and the shared `.dispatch/` observability contract.
+
+## Watching Progress
+
+Use these while the external interactive Codex remains in conversation with the user:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET" --run-id <run-id>
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --run-id <run-id>
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET" --json
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
+```
+
+Runtime state is stored under:
+
+```text
+.dispatch/plans/
+.dispatch/runs/<run-id>/run.json
+.dispatch/runs/<run-id>/events.jsonl
+.dispatch/runs/<run-id>/agents/
+.dispatch/runs/<run-id>/prompts/
+.dispatch/runs/<run-id>/reports/
+.dispatch/runs/<run-id>/reviews/
+.dispatch/runs/<run-id>/validation/
+.dispatch/runs/<run-id>/logs/
+.dispatch/runs/<run-id>/heartbeats/
+```
+
+Live coordinator launches write:
+
+```text
+.dispatch/runs/<run-id>/prompts/coordinator-001.md
+.dispatch/runs/<run-id>/logs/coordinator-001.stdout.log
+.dispatch/runs/<run-id>/logs/coordinator-001.stderr.log
+```
+
+## Git Guidance
+
+Default: do not commit `.dispatch/` runtime state in target repositories.
+
+Add this to the target repo's `.gitignore` unless that repo has a deliberate fixture policy:
+
+```gitignore
+.dispatch/
+```
+
+Accepted project changes belong in normal source, test, docs, spec, or configuration paths. Human-curated runbooks, examples, or fixtures can be committed outside `.dispatch/` when the project wants durable documentation.
+
+## Troubleshooting
+
+- `scripts/de.py` missing: reinstall or recopy the whole skill directory; the runtime must live under the skill root.
+- `init` fails with invalid plan: check required fields `schema_version`, `plan_id`, `objective`, and a non-empty `workstreams` list.
+- `run --dry-run` fails with missing run: import a plan first, or pass `--run-id <run-id>` for an existing run.
+- `run` fails because `codex` is unavailable: install or configure the Codex CLI, or use `--provider claude` when the Claude CLI is intentionally available.
+- `run --provider claude` fails because `claude` is unavailable: install/configure Claude CLI or use the default Codex provider.
+- Progress looks stale: check `status`, then `tail`, then inspect `.dispatch/runs/<run-id>/logs/` and `.dispatch/runs/<run-id>/events.jsonl`.
+- A coordinator edited project files directly: treat that as a protocol violation. Reassign implementation to registered workers/reviewers/validators and keep coordinator output as orchestration evidence only.
+
+## Validation Commands
+
+From the installed skill root:
+
+```bash
+python3 scripts/de.py --help
+python3 scripts/de.py run --help
+python3 scripts/de.py version
+python3 scripts/de.py run <repo> --dry-run
+rg "install|copy|clone|quickstart|.dispatch|status|tail|troubleshooting" README.md SKILL.md references specs/rfc-0013-skill-install-operator-docs
+```
+
+`run <repo> --dry-run` requires an imported run in the target repository. If no run exists yet, validate CLI shape with `python3 scripts/de.py run --help` and validate target operation after importing a plan.

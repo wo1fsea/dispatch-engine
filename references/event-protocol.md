@@ -26,12 +26,15 @@ Use this reference when changing Dispatch Engine run-state or event-log behavior
         worker-001.json
       prompts/
         coordinator-001.md
+        worker-001.md
       reports/
         coordinator-001.json
         worker-001.json
       logs/
         coordinator-001.stdout.log
         coordinator-001.stderr.log
+        worker-001.stdout.log
+        worker-001.stderr.log
         worker-001.jsonl
       heartbeats/
         coordinator-001.jsonl
@@ -90,12 +93,12 @@ records. Workers, reviewers, and validators must be registered here before
 their implementation, review, or validation output is treated as valid.
 
 `prompts/` contains runtime-rendered prompt snapshots. `reports/` contains
-accepted agent reports. `logs/` contains agent log streams and live coordinator
-stdout/stderr captures. `heartbeats/` contains append-only agent heartbeat
-streams. `artifacts/` is reserved for other run-scoped generated artifacts.
-`reviews/` is reserved for reviewer reports and acceptance records.
-`validation/` is reserved for runtime-captured validation commands, outputs,
-and summaries.
+coordinator and worker reports. `reviews/` contains reviewer reports and
+acceptance records. `validation/` contains validator reports plus
+runtime-captured validation commands, outputs, and summaries. `logs/` contains
+agent log streams and live coordinator stdout/stderr captures. `heartbeats/`
+contains append-only agent heartbeat streams. `artifacts/` is reserved for other
+run-scoped generated artifacts.
 
 Agent registry records include:
 
@@ -213,7 +216,7 @@ Optional fields:
 `protocol.violation`
 
 - Written when Dispatch Engine detects a coordinator-only, file-scope,
-  unregistered-agent, or state-contract violation.
+  unregistered-agent, worker-report, or state-contract violation.
 - Includes `workstream` when the violation applies to a workstream.
 - Payload includes `violation` and `details`.
 
@@ -225,15 +228,15 @@ Optional fields:
 
 `workstream.scheduled`
 
-- Written when the future scheduler marks a workstream ready for a worker.
+- Reserved for a coordinator or adapter marking a workstream ready for a worker.
 - Includes `workstream`.
 - Payload may include dependency and parallel group context.
 
 `worker.completed`
 
-- Written when a worker returns a report for a workstream.
-- Includes `workstream`.
-- Payload includes worker status and report location under `.dispatch/runs/<run-id>/artifacts/` or another run-scoped runtime directory.
+- Reserved legacy/future specialized worker event.
+- Current rfc-0007 helper-first worker completion uses `agent.completed` with
+  the worker report location under `.dispatch/runs/<run-id>/reports/`.
 
 `review.completed`
 

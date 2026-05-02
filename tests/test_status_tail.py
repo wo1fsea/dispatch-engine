@@ -104,9 +104,13 @@ class StatusTailTests(unittest.TestCase):
                 status["heartbeat_summary"],
                 {"total_agents": 3, "with_heartbeat": 2, "missing_heartbeat": 1},
             )
-            self.assertEqual(status["protocol_violations"]["count"], 1)
+            self.assertEqual(status["protocol_violations"]["count"], 2)
             self.assertEqual(status["protocol_violations"]["event_count"], 1)
-            self.assertEqual(status["protocol_violations"]["detected_count"], 0)
+            self.assertEqual(status["protocol_violations"]["detected_count"], 1)
+            self.assertEqual(
+                status["protocol_violations"]["detected"][0]["violation"],
+                "missing_reviewer_report",
+            )
 
     def test_status_command_prints_concise_agent_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

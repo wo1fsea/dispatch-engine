@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from .agents import detect_protocol_violations, list_agents
+from .decisions import (
+    list_pending_decisions,
+    list_unresolved_blockers,
+    validate_decision_blocker_state,
+)
 from .events import read_events
 from .runs import resolve_run_dir
 
@@ -36,14 +41,21 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
 
     data = json.loads(run_file.read_text(encoding="utf-8"))
     workstreams = data.get("workstreams", [])
-    decisions = data.get("decisions", [])
     counts = dict(Counter(item.get("status", "unknown") for item in workstreams))
-    pending_decisions = sum(1 for item in decisions if item.get("status", "pending") == "pending")
+    pending_decision_records = list_pending_decisions(selected)
+    if not pending_decision_records and not (selected / "decisions.jsonl").exists():
+        pending_decision_records = [
+            item for item in data.get("decisions", []) if item.get("status", "pending") == "pending"
+        ]
+    pending_decisions = len(pending_decision_records)
+    unresolved_blockers = list_unresolved_blockers(selected)
+    decision_blocker_validation = validate_decision_blocker_state(selected)
     events = read_events(selected / "events.jsonl")
     agent_summary = _agent_observability(selected, workstreams, events)
     summary = (
         f"Run {data.get('run_id')} [{data.get('status', 'unknown')}] "
-        f"has {len(workstreams)} workstream(s), {pending_decisions} pending decision(s): "
+        f"has {len(workstreams)} workstream(s), {pending_decisions} pending decision(s), "
+        f"{len(unresolved_blockers)} unresolved blocker(s): "
         f"{data.get('objective')}"
     )
     return {
@@ -55,6 +67,8 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
         "run_status": data.get("status"),
         "workstream_counts": counts,
         "pending_decisions": pending_decisions,
+        "unresolved_blockers": len(unresolved_blockers),
+        "decision_blocker_validation": decision_blocker_validation,
         "state_dir": str(selected),
         "last_event_at": events[-1].get("ts") if events else None,
         **agent_summary,

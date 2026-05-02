@@ -10,7 +10,12 @@ from typing import Any
 
 from .agents import register_agent
 from .events import coordinator_completed, coordinator_failed, coordinator_started, utc_timestamp
-from .prompts import DRY_RUN_PROMPT_MARKER, render_coordinator_prompt
+from .prompts import (
+    DRY_RUN_PROMPT_MARKER,
+    coordinator_prompt_instruction,
+    render_coordinator_prompt,
+    write_coordinator_prompt_snapshot,
+)
 from .runs import ensure_run_runtime_dirs, resolve_run_dir
 
 COORDINATOR_AGENT_ID = "coordinator-001"
@@ -111,10 +116,9 @@ def launch_run_coordinator(
         run_state_dir=run_state_dir,
         profile=profile,
     )
-    prompt_path = run_state_dir / "prompts" / f"{COORDINATOR_AGENT_ID}.md"
+    prompt_path = write_coordinator_prompt_snapshot(run_state_dir, prompt_text)
     stdout_path = run_state_dir / "logs" / f"{COORDINATOR_AGENT_ID}.stdout.log"
     stderr_path = run_state_dir / "logs" / f"{COORDINATOR_AGENT_ID}.stderr.log"
-    prompt_path.write_text(prompt_text, encoding="utf-8")
     stdout_path.write_text("", encoding="utf-8")
     stderr_path.write_text("", encoding="utf-8")
 
@@ -277,10 +281,7 @@ def _render_argv(
 
 
 def _provider_instruction(prompt_path: str) -> str:
-    return (
-        "Read and follow the Dispatch Engine coordinator instructions in this file: "
-        f"{prompt_path}"
-    )
+    return coordinator_prompt_instruction(prompt_path)
 
 
 def _live_payload(

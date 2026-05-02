@@ -186,6 +186,22 @@ class AgentStateProtocolTests(unittest.TestCase):
                 ["protocol.violation", "protocol.violation"],
             )
 
+    def test_accepted_workstream_without_registered_evidence_is_a_protocol_violation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_dir = _import_plan(Path(tmp))
+            workstream_path = state_dir / "workstreams" / "01-agent-state.json"
+            workstream = json.loads(workstream_path.read_text())
+            workstream["status"] = "accepted"
+            workstream_path.write_text(json.dumps(workstream, indent=2, sort_keys=True) + "\n")
+
+            violations = detect_protocol_violations(state_dir)
+
+            self.assertEqual(
+                [item["violation"] for item in violations],
+                ["unregistered_implementation_completion"],
+            )
+            self.assertEqual(violations[0]["details"], {"status": "accepted"})
+
     def test_legacy_runs_without_agent_directories_are_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state_dir = Path(tmp) / ".dispatch" / "runs" / "legacy-run"

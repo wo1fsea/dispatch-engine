@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "plan_id": "dogfood-runbook-fixture",
+  "objective": "Demonstrate a minimal skill-first Dispatch Engine dogfood run from plan import through coordinator launch, registered evidence, status, tail, and decision/blocker records.",
+  "created_by": "rfc-0012",
+  "created_at": "2026-05-02T00:00:00Z",
+  "target_repo": ".",
+  "repo_context": {
+    "instructions_read": [
+      "AGENTS.md",
+      "references/orchestrator-loop.md",
+      "references/decision-blocker-protocol.md",
+      "references/review-validator-protocol.md"
+    ],
+    "planning_basis": "rfc-0012 dogfood runbook fixture",
+    "validation_strategy": "Import this fixture plan into a target repo, render coordinator dry-run, optionally launch a fake provider CLI, register worker/reviewer/validator evidence, query status/tail, and record decision/blocker lifecycle records."
+  },
+  "workstreams": [
+    {
+      "id": "01-dogfood-evidence-loop",
+      "title": "Dogfood evidence loop",
+      "mode": "serial",
+      "scope": "Use skill-first guidance and existing Dispatch Engine runtime helpers to demonstrate durable run evidence without implementing a new scheduler.",
+      "files": [
+        "references/dogfood-runbook.md",
+        "fixtures/dogfood-runbook/plan.json",
+        "fixtures/dogfood-runbook/README.md",
+        "tests/test_dogfood_runbook_fixture.py",
+        "specs/rfc-0012-dogfood-runbook-fixture/STATUS.md"
+      ],
+      "depends_on": [],
+      "parallel_group": null,
+      "validation": [
+        "PYTHONPATH=scripts python3 -m unittest tests.test_dogfood_runbook_fixture",
+        "PYTHONPATH=scripts python3 -m unittest discover -s tests"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "decision_id": "decision-dogfood-provider",
+      "id": "decision-dogfood-provider",
+      "status": "pending",
+      "question": "Should this dogfood run use a real provider CLI or the deterministic fake provider shim?",
+      "reason": "The fixture is intended to be deterministic; real providers remain operator optional.",
+      "workstream": "01-dogfood-evidence-loop"
+    }
+  ],
+  "review": {
+    "required": true,
+    "strategy": "A registered reviewer checks the evidence shape; a registered validator records deterministic command output."
+  }
+}

@@ -9,11 +9,26 @@ Use this skill to operate the bundled Dispatch Engine runtime from a repository 
 
 Dispatch Engine is a skill-first project: the skill root contains the operator instructions, the runnable local CLI, runtime modules, and reference protocols. A user should be able to clone or copy this directory into their Codex skills directory and have the runtime available through the bundled scripts.
 
+For install, target repo quickstart, progress watching, git ignore guidance,
+and troubleshooting, read `references/operator-guide.md`.
+
 ## Boundary Rule
 
-Interactive Codex plus this skill owns repository discovery, planning judgment, workstream splitting, review, and user conversation. The bundled runtime owns explicit plan import, durable `.dispatch/` run state, foreground provider CLI coordinator launch, event logging, status/tail readers, and the future mechanical orchestrator loop.
+Interactive Codex plus this skill owns repository discovery, planning judgment, workstream splitting, review, and user conversation. The bundled runtime owns explicit plan import, durable `.dispatch/` run state, foreground provider CLI coordinator launch, event logging, status/tail readers, and future mechanical helpers only where durable/queryable state is required.
 
 Dispatch Engine-generated non-project runtime content in a target repository belongs only under `.dispatch/`. Project files changed to satisfy the user's objective remain in the target repository's normal project paths.
+
+## Skill-First Principle
+
+Prefer skill/reference/prompt guidance over runtime code. Workflow judgment,
+role behavior, provider-native spawn guidance, review criteria, validation
+expectations, blocked-decision handling, and operator runbooks should live in
+this skill and `references/` unless runtime code is truly needed.
+
+Add behavior to `scripts/dispatch_engine/` only when it must be durable,
+queryable, resumable, mechanically validated, or surfaced through `de status`
+or `de tail`. This keeps Dispatch Engine a small runtime-backed skill instead
+of a provider-specific agent platform.
 
 ## Runtime Location
 
@@ -64,7 +79,12 @@ provider launch argv.
 
 Runtime prompt templates are centralized under `references/prompts/`. Do not
 embed provider, coordinator, worker, reviewer, or validator prompt text directly
-in runtime modules.
+in runtime modules. Coordinator prompts are rendered from
+`references/prompts/coordinator-protocol.md`, written as run-scoped snapshots,
+and passed to provider CLIs through a short prompt-file instruction.
+Worker prompts are rendered from `references/prompts/worker-protocol.md` and
+must carry the repo, run id, state directory, assigned workstream, assigned
+files, allowed write roots, validation expectations, and report path.
 
 ## Operating Flow
 
@@ -85,14 +105,26 @@ Provider CLI processes are coordinators only. A coordinator may plan, dispatch,
 monitor, review, summarize, request decisions, and write Dispatch Engine runtime
 state under `.dispatch/`; it must not directly implement project-file changes.
 Project implementation belongs to registered workers, reviewers, or validators.
+Coordinator owns spawn decisions; Dispatch Engine owns the durable
+observability contract. Coordinators may use provider-native spawn mechanisms
+for workers, reviewers, and validators, but every spawned agent must be visible
+through the same `.dispatch/` files.
 
 Workers, reviewers, and validators must be registered before their output is
-treated as valid. Registry records live under:
+treated as valid. Worker output requires a durable JSON report under
+`.dispatch/runs/<run-id>/reports/<agent-id>.json`; reviewer evidence belongs
+under `.dispatch/runs/<run-id>/reviews/<agent-id>.json`; validator evidence
+belongs under `.dispatch/runs/<run-id>/validation/<agent-id>.json`. Missing
+reports, malformed reports, or worker changed files outside the assigned files
+and allowed write roots are protocol violations. Prompt snapshots, reports,
+logs, status records, and heartbeats for spawned agents live under:
 
 ```text
 .dispatch/runs/<run-id>/agents/
 .dispatch/runs/<run-id>/prompts/
 .dispatch/runs/<run-id>/reports/
+.dispatch/runs/<run-id>/reviews/
+.dispatch/runs/<run-id>/validation/
 .dispatch/runs/<run-id>/logs/
 .dispatch/runs/<run-id>/heartbeats/
 ```
@@ -117,10 +149,17 @@ python scripts/de.py version
 
 If runtime code has moved or been rebuilt elsewhere, copy or vendor the current runtime back into this skill directory before installation guidance.
 
+Install by cloning or copying the complete skill root into
+`$CODEX_HOME/skills/dispatch-engine`, or `~/.codex/skills/dispatch-engine` when
+`CODEX_HOME` is unset. Do not split `SKILL.md` from `scripts/`, `references/`,
+or `references/prompts/`; the runtime is intentionally bundled inside the skill
+repo.
+
 ## Reference Files
 
+- Read `references/operator-guide.md` when installing the skill or operating it against a target repo.
 - Read `references/operator-flow.md` when supervising a run from interactive Codex.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.
-- Read `references/orchestrator-loop.md` when designing the future runtime scheduler, worker, reviewer, validation, and status/tail loop.
+- Read `references/orchestrator-loop.md` when designing coordinator-spawned worker, reviewer, validator, evidence, and status/tail flows.
 - Read `references/prompts/` when changing runtime prompt templates.
