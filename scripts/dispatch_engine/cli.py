@@ -8,8 +8,9 @@ from pathlib import Path
 
 from . import __version__
 from .coordinators import CoordinatorLaunchError, launch_run_coordinator, render_run_dry_run
+from .decisions import DecisionBlockerValidationError, resolve_decision
 from .plan_schema import PlanValidationError, import_dispatch_plan
-from .state import run_status, tail_events
+from .state import run_alerts, run_events, run_status, tail_events
 from .supervisor import launch_detached_coordinator
 
 
@@ -38,6 +39,26 @@ def build_parser() -> argparse.ArgumentParser:
     tail_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     tail_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
     _add_json_flag(tail_parser)
+
+    events_parser = subparsers.add_parser("events", help="Read Dispatch Engine run events.")
+    events_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
+    events_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
+    events_parser.add_argument("--since", help="Return events after event id or numeric index.")
+    _add_json_flag(events_parser)
+
+    alerts_parser = subparsers.add_parser("alerts", help="Read material Dispatch Engine alerts.")
+    alerts_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
+    alerts_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
+    _add_json_flag(alerts_parser)
+
+    resolve_parser = subparsers.add_parser("resolve-decision", help="Resolve a pending Dispatch Engine decision.")
+    resolve_parser.add_argument("target", help="Repository path containing .dispatch state.")
+    resolve_parser.add_argument("--id", required=True, help="Decision id to resolve.")
+    resolve_parser.add_argument("--option", required=True, help="Selected option id.")
+    resolve_parser.add_argument("--run-id", help="Resolve a specific run id instead of the latest run.")
+    resolve_parser.add_argument("--actor", default="dispatch-engine", help="Actor recorded in decision state.")
+    resolve_parser.add_argument("--resolution", help="Resolution text to record.")
+    _add_json_flag(resolve_parser)
 
     run_parser = subparsers.add_parser("run", help="Render or launch a provider CLI coordinator.")
     run_parser.add_argument("target", help="Repository path containing .dispatch state.")
@@ -83,6 +104,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "tail":
         result = tail_events(Path(args.target), run_id=args.run_id)
+        return _print(result, args.json)
+
+    if args.command == "events":
+        result = run_events(Path(args.target), run_id=args.run_id, since=args.since)
+        return _print(result, args.json)
+
+    if args.command == "alerts":
+        result = run_alerts(Path(args.target), run_id=args.run_id)
+        return _print(result, args.json)
+
+    if args.command == "resolve-decision":
+        result = _resolve_decision_command(
+            Path(args.target),
+            decision_id=args.id,
+            option_id=args.option,
+            run_id=args.run_id,
+            actor=args.actor,
+            resolution=args.resolution,
+        )
         return _print(result, args.json)
 
     if args.command == "run":
@@ -161,6 +201,29 @@ def _print(payload: dict, as_json: bool) -> int:
         for event in payload["events"]:
             workstream = f" [{event['workstream']}]" if "workstream" in event else ""
             print(f"{event['ts']} {event['type']}{workstream}")
+        return 0
+
+    if kind == "events":
+        if payload.get("status") != "ok":
+            print(payload["summary"])
+            return 0
+        for event in payload["events"]:
+            workstream = f" [{event['workstream']}]" if "workstream" in event else ""
+            print(f"{event['id']} {event['ts']} {event['type']}{workstream}")
+        return 0
+
+    if kind == "alerts":
+        if payload.get("status") != "ok":
+            print(payload["summary"])
+            return 0
+        for alert in payload["alerts"]:
+            print(f"{alert['id']} {alert['type']}")
+        return 0
+
+    if kind == "decision_resolution":
+        print(f"Resolved decision: {payload['decision_id']}")
+        print(f"Option: {payload['selected_option_id']}")
+        print(f"State: {payload['state_dir']}")
         return 0
 
     if kind == "run_dry_run":
@@ -259,3 +322,55 @@ def _format_counts(counts: dict) -> str:
     if not counts:
         return "none"
     return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
+def _resolve_decision_command(
+    target: Path,
+    *,
+    decision_id: str,
+    option_id: str,
+    run_id: str | None,
+    actor: str,
+    resolution: str | None,
+) -> dict:
+    from .runs import resolve_run_dir
+
+    root = target.resolve()
+    selected = resolve_run_dir(root, run_id)
+    if selected is None:
+        result = {
+            "kind": "error",
+            "status": "missing_run" if run_id else "no_run",
+            "summary": f"Run not found: {run_id}" if run_id else "No Dispatch Engine runs found.",
+        }
+        if run_id:
+            result["run_id"] = run_id
+        return result
+
+    try:
+        decision = resolve_decision(
+            selected,
+            decision_id,
+            option_id=option_id,
+            resolution=resolution,
+            actor=actor,
+        )
+    except DecisionBlockerValidationError as exc:
+        return {
+            "kind": "error",
+            "status": "invalid_decision_resolution",
+            "summary": str(exc),
+            "run_id": selected.name,
+            "state_dir": str(selected),
+        }
+
+    return {
+        "kind": "decision_resolution",
+        "status": "ok",
+        "summary": f"Resolved decision {decision_id}.",
+        "run_id": selected.name,
+        "state_dir": str(selected),
+        "decision_id": decision_id,
+        "selected_option_id": option_id,
+        "decision": decision,
+    }

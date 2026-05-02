@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+EVENT_ID_PREFIX = "event-"
+
+
+class EventCursorError(ValueError):
+    """Raised when an event cursor cannot be parsed."""
+
 
 def utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -243,3 +249,34 @@ def read_events(event_log: Path) -> list[dict[str, Any]]:
             continue
         events.append(json.loads(line))
     return events
+
+
+def read_events_with_ids(event_log: Path, *, since: str | None = None) -> list[dict[str, Any]]:
+    """Return events with generated stable ids, optionally after a cursor."""
+
+    events = read_events(event_log)
+    start_index = _since_index(since)
+    return [
+        {**event, "id": _event_id(index)}
+        for index, event in enumerate(events, start=1)
+        if index > start_index
+    ]
+
+
+def _event_id(index: int) -> str:
+    return f"{EVENT_ID_PREFIX}{index:06d}"
+
+
+def _since_index(since: str | None) -> int:
+    if since is None or since == "":
+        return 0
+    raw = str(since)
+    if raw.startswith(EVENT_ID_PREFIX):
+        raw = raw.removeprefix(EVENT_ID_PREFIX)
+    try:
+        index = int(raw)
+    except ValueError as exc:
+        raise EventCursorError(f"invalid event cursor: {since!r}") from exc
+    if index < 0:
+        raise EventCursorError(f"invalid event cursor: {since!r}")
+    return index

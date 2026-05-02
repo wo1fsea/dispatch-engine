@@ -13,11 +13,12 @@ from .decisions import (
     list_unresolved_blockers,
     validate_decision_blocker_state,
 )
-from .events import read_events
+from .events import EventCursorError, read_events, read_events_with_ids
 from .runs import resolve_run_dir
 from .supervisor import read_supervisors
 
 TERMINAL_AGENT_STATUSES = frozenset({"completed", "failed", "cancelled"})
+MATERIAL_STATUSES = frozenset({"completed", "failed", "blocked"})
 
 
 def latest_run_summary(target: Path) -> dict:
@@ -53,6 +54,12 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
     decision_blocker_validation = validate_decision_blocker_state(selected)
     events = read_events(selected / "events.jsonl")
     agent_summary = _agent_observability(selected, workstreams, events)
+    next_actions = _next_actions(
+        pending_decision_records=pending_decision_records,
+        unresolved_blockers=unresolved_blockers,
+        protocol_violations=agent_summary["protocol_violations"],
+        agents=agent_summary["agents"],
+    )
     summary = (
         f"Run {data.get('run_id')} [{data.get('status', 'unknown')}] "
         f"has {len(workstreams)} workstream(s), {pending_decisions} pending decision(s), "
@@ -70,6 +77,7 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
         "pending_decisions": pending_decisions,
         "unresolved_blockers": len(unresolved_blockers),
         "decision_blocker_validation": decision_blocker_validation,
+        "next_actions": next_actions,
         "state_dir": str(selected),
         "last_event_at": events[-1].get("ts") if events else None,
         **agent_summary,
@@ -98,6 +106,73 @@ def tail_events(target: Path, run_id: str | None = None) -> dict:
         "run_id": selected.name,
         "state_dir": str(selected),
         "events": events,
+    }
+
+
+def run_events(target: Path, run_id: str | None = None, *, since: str | None = None) -> dict:
+    root = target.resolve()
+    selected = resolve_run_dir(root, run_id)
+    if selected is None:
+        result = _missing_run(run_id) if run_id else _no_run()
+        result["kind"] = "events"
+        result["events"] = []
+        return result
+
+    try:
+        events = read_events_with_ids(selected / "events.jsonl", since=since)
+    except EventCursorError as exc:
+        return {
+            "kind": "error",
+            "status": "invalid_event_cursor",
+            "summary": str(exc),
+        }
+
+    return {
+        "kind": "events",
+        "status": "ok",
+        "summary": f"Run {selected.name} has {len(events)} matching event(s).",
+        "run_id": selected.name,
+        "state_dir": str(selected),
+        "events": events,
+    }
+
+
+def run_alerts(target: Path, run_id: str | None = None) -> dict:
+    root = target.resolve()
+    selected = resolve_run_dir(root, run_id)
+    if selected is None:
+        result = _missing_run(run_id) if run_id else _no_run()
+        result["kind"] = "alerts"
+        result["alerts"] = []
+        return result
+
+    run_file = selected / "run.json"
+    if not run_file.exists():
+        return {
+            "kind": "alerts",
+            "status": "missing_run_file",
+            "summary": f"Run has no run.json: {selected}",
+            "alerts": [],
+        }
+
+    data = json.loads(run_file.read_text(encoding="utf-8"))
+    events = read_events(selected / "events.jsonl")
+    agents = list_agents(selected)
+    alerts = _material_alerts(
+        run_id=selected.name,
+        run=data,
+        pending_decisions=list_pending_decisions(selected),
+        unresolved_blockers=list_unresolved_blockers(selected),
+        protocol_violations=_protocol_violations(selected, events),
+        agents=agents,
+    )
+    return {
+        "kind": "alerts",
+        "status": "ok",
+        "summary": f"Run {selected.name} has {len(alerts)} material alert(s).",
+        "run_id": selected.name,
+        "state_dir": str(selected),
+        "alerts": _with_alert_ids(alerts),
     }
 
 
@@ -146,6 +221,57 @@ def _agent_observability(
         },
         "protocol_violations": protocol_violations,
     }
+
+
+def _next_actions(
+    *,
+    pending_decision_records: list[dict[str, Any]],
+    unresolved_blockers: list[dict[str, Any]],
+    protocol_violations: dict[str, Any],
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    for decision in sorted(pending_decision_records, key=lambda item: _record_id(item, "decision_id")):
+        action: dict[str, Any] = {
+            "type": "decision_required",
+            "decision_id": _record_id(decision, "decision_id"),
+            "question": decision.get("question", ""),
+        }
+        if decision.get("workstream"):
+            action["workstream"] = decision["workstream"]
+        recommended_option = _recommended_option_id(decision.get("options"))
+        if recommended_option:
+            action["recommended_option"] = recommended_option
+        actions.append(action)
+
+    if unresolved_blockers:
+        actions.append(
+            {
+                "type": "blocker_resolution_required",
+                "count": len(unresolved_blockers),
+                "blocker_ids": sorted(_record_id(item, "blocker_id") for item in unresolved_blockers),
+            }
+        )
+
+    violation_count = protocol_violations.get("count", 0)
+    if violation_count:
+        actions.append({"type": "repair_protocol_violations", "count": violation_count})
+
+    failed_agents = sorted(
+        agent.get("agent_id", "")
+        for agent in agents
+        if agent.get("status") == "failed" and agent.get("agent_id")
+    )
+    if failed_agents:
+        actions.append(
+            {
+                "type": "inspect_failed_agents",
+                "count": len(failed_agents),
+                "agent_ids": failed_agents,
+            }
+        )
+
+    return actions
 
 
 def _first_coordinator(agents: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -206,10 +332,7 @@ def _workstream_progress(
 def _protocol_violation_summary(run_state_dir: Path, events: list[dict[str, Any]]) -> dict[str, Any]:
     event_violations = [_event_protocol_violation(event) for event in events if event.get("type") == "protocol.violation"]
     detected_violations = detect_protocol_violations(run_state_dir)
-    unique = {
-        json.dumps(item, sort_keys=True)
-        for item in [*event_violations, *detected_violations]
-    }
+    unique = _unique_protocol_violations([*event_violations, *detected_violations])
     return {
         "count": len(unique),
         "event_count": len(event_violations),
@@ -227,3 +350,122 @@ def _event_protocol_violation(event: dict[str, Any]) -> dict[str, Any]:
     if "workstream" in event:
         violation["workstream"] = event["workstream"]
     return violation
+
+
+def _material_alerts(
+    *,
+    run_id: str,
+    run: dict[str, Any],
+    pending_decisions: list[dict[str, Any]],
+    unresolved_blockers: list[dict[str, Any]],
+    protocol_violations: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    alerts: list[dict[str, Any]] = []
+    for decision in sorted(pending_decisions, key=lambda item: _record_id(item, "decision_id")):
+        alert: dict[str, Any] = {
+            "type": "pending_decision",
+            "run_id": run_id,
+            "decision_id": _record_id(decision, "decision_id"),
+            "question": decision.get("question", ""),
+        }
+        if decision.get("workstream"):
+            alert["workstream"] = decision["workstream"]
+        recommended_option = _recommended_option_id(decision.get("options"))
+        if recommended_option:
+            alert["recommended_option"] = recommended_option
+        alerts.append(alert)
+
+    for blocker in sorted(unresolved_blockers, key=lambda item: _record_id(item, "blocker_id")):
+        alert = {
+            "type": "unresolved_blocker",
+            "run_id": run_id,
+            "blocker_id": _record_id(blocker, "blocker_id"),
+            "summary": blocker.get("summary", ""),
+        }
+        if blocker.get("workstream"):
+            alert["workstream"] = blocker["workstream"]
+        alerts.append(alert)
+
+    for violation in protocol_violations:
+        alert = {
+            "type": "protocol_violation",
+            "run_id": run_id,
+            "violation": violation.get("violation", "unknown"),
+            "details": violation.get("details", {}),
+        }
+        if violation.get("agent_id"):
+            alert["agent_id"] = violation["agent_id"]
+        if violation.get("workstream"):
+            alert["workstream"] = violation["workstream"]
+        alerts.append(alert)
+
+    for agent in sorted(agents, key=lambda item: item.get("agent_id", "")):
+        if agent.get("status") != "failed":
+            continue
+        alert = {
+            "type": "failed_agent",
+            "run_id": run_id,
+            "agent_id": agent.get("agent_id"),
+            "role": agent.get("role"),
+        }
+        if agent.get("workstream"):
+            alert["workstream"] = agent["workstream"]
+        if agent.get("failure_reason"):
+            alert["reason"] = agent["failure_reason"]
+        alerts.append(alert)
+
+    run_status = run.get("status")
+    if run_status in MATERIAL_STATUSES:
+        alerts.append({"type": f"run_{run_status}", "run_id": run_id, "status": run_status})
+
+    for workstream in sorted(run.get("workstreams", []), key=lambda item: item.get("id", "")):
+        workstream_status = workstream.get("status")
+        if workstream_status not in MATERIAL_STATUSES:
+            continue
+        alerts.append(
+            {
+                "type": f"workstream_{workstream_status}",
+                "run_id": run_id,
+                "workstream": workstream.get("id"),
+                "status": workstream_status,
+            }
+        )
+    return alerts
+
+
+def _protocol_violations(run_state_dir: Path, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    event_violations = [_event_protocol_violation(event) for event in events if event.get("type") == "protocol.violation"]
+    return _unique_protocol_violations([*event_violations, *detect_protocol_violations(run_state_dir)])
+
+
+def _unique_protocol_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: dict[str, dict[str, Any]] = {}
+    for violation in violations:
+        key = json.dumps(violation, sort_keys=True)
+        unique[key] = violation
+    return [unique[key] for key in sorted(unique)]
+
+
+def _with_alert_ids(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {**alert, "id": f"alert-{index:06d}"}
+        for index, alert in enumerate(alerts, start=1)
+    ]
+
+
+def _record_id(record: dict[str, Any], field: str) -> str:
+    return str(record.get(field) or record.get("id") or "")
+
+
+def _recommended_option_id(options: Any) -> str | None:
+    if not isinstance(options, list):
+        return None
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        if option.get("recommended") is True or str(option.get("status", "")).lower() == "recommended":
+            return str(option.get("option_id") or option.get("id") or "")
+        if str(option.get("marker", "")).lower() == "recommended":
+            return str(option.get("option_id") or option.get("id") or "")
+    return None

@@ -27,8 +27,8 @@ status, decisions, alerts, and protocol violations for the user.
 - Goal: Define heartbeat observation as a host-layer mechanism, not a Dispatch
   Engine daemon responsibility.
 - Goal: Keep `de` commands Codex-facing and JSON-first.
-- Goal: Define the next Codex-facing surfaces for status interpretation,
-  decision resolution, events, and alerts.
+- Goal: Define and implement the Codex-facing surfaces for status
+  interpretation, decision resolution, events, and alerts.
 - Goal: Require skill/operator guidance for starting a detached run with an
   optional thread heartbeat monitor when the host supports it.
 - Non-goal: Build a human dashboard or terminal UI.
@@ -78,7 +78,7 @@ heartbeat wakeup or user question -> Codex reads de status/events/alerts --json
    mechanism when available.
 4. The spec defines fallback behavior when no heartbeat exists: Codex checks
    status on the next user message.
-5. The spec identifies required future runtime surfaces:
+5. The implementation provides runtime surfaces:
    `status --json`, event delta reads, alert snapshots, and decision resolution
    by machine-readable command.
 6. Existing docs avoid implying that the foreground chat continuously polls

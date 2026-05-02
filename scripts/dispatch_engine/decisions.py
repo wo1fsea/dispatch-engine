@@ -63,15 +63,23 @@ def resolve_decision(
     run_state_dir: Path,
     decision_id: str,
     *,
-    resolution: str,
+    resolution: str | None = None,
+    option_id: str | None = None,
     actor: str = "dispatch-engine",
 ) -> dict[str, Any]:
     """Append a decision resolution record."""
 
     _validate_record_id(decision_id, "decision_id")
+    existing = _require_latest(list_decisions(run_state_dir), "decision_id", decision_id)
+    if existing.get("status") != "pending":
+        raise DecisionBlockerValidationError(f"decision is not pending: {decision_id}")
+    if option_id is not None:
+        _validate_record_id(option_id, "option_id")
+        _validate_decision_option(existing, option_id)
+    if resolution is None:
+        resolution = f"Selected option: {option_id}" if option_id else "Decision resolved."
     if not resolution:
         raise DecisionBlockerValidationError("decision resolution must not be empty")
-    existing = _require_latest(list_decisions(run_state_dir), "decision_id", decision_id)
 
     now = utc_timestamp()
     record = {
@@ -82,13 +90,18 @@ def resolve_decision(
         "updated_at": now,
         "resolved_by": actor,
     }
+    if option_id is not None:
+        record["selected_option_id"] = option_id
     _append_jsonl(_decisions_log(run_state_dir), record)
+    payload = {"decision_id": decision_id, "resolution": resolution}
+    if option_id is not None:
+        payload["option_id"] = option_id
     append_event(
         run_state_dir / "events.jsonl",
         "decision.resolved",
         actor=actor,
         workstream=record.get("workstream"),
-        payload={"decision_id": decision_id, "resolution": resolution},
+        payload=payload,
     )
     return record
 
@@ -249,3 +262,17 @@ def _require_latest(records: list[dict[str, Any]], id_field: str, record_id: str
 def _validate_record_id(record_id: str, field: str) -> None:
     if not record_id or "/" in record_id or "\\" in record_id:
         raise DecisionBlockerValidationError(f"invalid {field}: {record_id!r}")
+
+
+def _validate_decision_option(record: dict[str, Any], option_id: str) -> None:
+    options = record.get("options")
+    if options is None:
+        return
+    if not isinstance(options, list):
+        raise DecisionBlockerValidationError("decision options must be a list")
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        if option.get("option_id") == option_id or option.get("id") == option_id:
+            return
+    raise DecisionBlockerValidationError(f"decision option not found: {option_id}")

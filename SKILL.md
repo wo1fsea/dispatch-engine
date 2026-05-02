@@ -14,7 +14,8 @@ interface. Humans talk to interactive Codex; interactive Codex calls `de`,
 reads JSON/file state, and explains progress or decisions in conversation.
 
 For install, target repo quickstart, progress watching, git ignore guidance,
-and troubleshooting, read `references/operator-guide.md`.
+and troubleshooting, read `references/operator-guide.md`. For detached-run
+heartbeat guidance, read `references/heartbeat-observation.md`.
 
 ## Boundary Rule
 
@@ -55,6 +56,9 @@ python scripts/de.py run <repo> --dry-run
 python scripts/de.py run <repo> --provider codex --dry-run
 python scripts/de.py run <repo> --provider claude --dry-run
 python scripts/de.py status <repo>
+python scripts/de.py events <repo> --since event-000001 --json
+python scripts/de.py alerts <repo> --json
+python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> --json
 python scripts/de.py tail <repo>
 ```
 
@@ -118,9 +122,9 @@ files, allowed write roots, validation expectations, and report path.
 5. Preview the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
-8. For long-running detached work, create or suggest a host-layer heartbeat monitor when the current Codex host supports thread wakeups. If no heartbeat exists, state that Codex will check the latest status on the next user message.
-9. Monitor status through JSON CLI output and `.dispatch/runs/` files, not through chat memory alone.
-10. Resolve pending decisions explicitly before continuing blocked work.
+8. For long-running detached work, create or suggest a host-layer heartbeat monitor when the current Codex host supports thread wakeups. Use `references/heartbeat-observation.md` for interval guidance, prompt wording, material-change rules, and fallback wording.
+9. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.
+10. Resolve pending decisions explicitly after user approval with `resolve-decision`.
 11. Record validation evidence before claiming a run is complete.
 
 ## Coordinator And Agent Protocol
@@ -184,6 +188,7 @@ repo.
 
 - Read `references/operator-guide.md` when installing the skill or operating it against a target repo.
 - Read `references/operator-flow.md` when supervising a run from interactive Codex.
+- Read `references/heartbeat-observation.md` when configuring or explaining detached-run heartbeat observation.
 - Read `specs/rfc-0015-codex-heartbeat-observation/` when changing detached-run observation, heartbeat wakeup guidance, Codex-facing status/actions, or decision-resolution surfaces.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.

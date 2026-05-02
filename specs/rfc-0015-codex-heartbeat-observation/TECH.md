@@ -62,8 +62,8 @@ python3 scripts/de.py resolve-decision <repo> --id <decision-id> --option <optio
 }
 ```
 
-`events --since` and `alerts --json` are future mechanical helpers that let a
-woken Codex distinguish material changes from unchanged background activity.
+`events --since` and `alerts --json` are mechanical helpers that let a woken
+Codex distinguish material changes from unchanged background activity.
 
 ## Heartbeat Prompt Contract
 

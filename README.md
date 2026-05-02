@@ -44,7 +44,9 @@ rsync -a --delete --exclude '.git/' --exclude '.dispatch/' "$SOURCE/" "$CODEX_HO
 ```
 
 See [`references/operator-guide.md`](references/operator-guide.md) for the full
-install, quickstart, status, and troubleshooting runbook.
+install, quickstart, status, and troubleshooting runbook. See
+[`references/heartbeat-observation.md`](references/heartbeat-observation.md)
+for detached-run heartbeat guidance.
 
 ## Skill Layout
 
@@ -88,8 +90,10 @@ command shape; `--provider codex` selects that same provider explicitly.
 Detached runs keep the chat responsive, but they do not automatically wake the
 foreground Codex chat. For long-running work, interactive Codex should create or
 suggest a host-layer thread heartbeat when available. The heartbeat wakes Codex,
-which then reads `de status --json` and reports material changes. Without a
-heartbeat, Codex checks status when the user next asks.
+which then reads `status --json`, `events --since` deltas, and `alerts --json`
+snapshots before reporting material changes. Without a heartbeat, Codex checks
+status when the user next asks. Dispatch Engine does not send chat messages or
+own the wakeup.
 
 Target repo quickstart:
 
@@ -109,10 +113,13 @@ python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 
 Interactive Codex remains the external operator: it reads target repo
 instructions, prepares the explicit plan, keeps the user in the loop, asks for
-decisions, reviews evidence, and polls `status` / `tail`. Dispatch Engine's
-provider CLI coordinator performs provider-native dispatch and writes durable
-`.dispatch/` orchestration state, but it is coordinator-only and does not
-directly implement project files.
+decisions, reviews evidence, and polls Codex-facing state surfaces such as
+`status --json`, `events --since`, `alerts --json`, and `tail`. After explicit
+user approval, Codex can use `resolve-decision` to record a selected option.
+Dispatch Engine's provider CLI coordinator
+performs provider-native dispatch and writes durable `.dispatch/`
+orchestration state, but it is coordinator-only and does not directly implement
+project files.
 
 `de run <repo> --dry-run` renders the selected provider command and coordinator
 prompt without launching a provider process or writing runtime state. Live runs
