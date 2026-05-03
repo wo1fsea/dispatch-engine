@@ -34,11 +34,12 @@ progress or asks for decisions.
 6. Ask the user before high-risk execution, parallel work, or unresolved decisions.
 7. Preview coordinator launch with `python3 scripts/de.py run <repo> --dry-run`; omitting `--provider` uses the default `codex` provider, while `--provider claude` is optional.
 8. Prefer `python3 scripts/de.py run <repo> --detach` from interactive Codex so the conversation can continue while status and tail are polled.
-9. For long-running detached work, create or suggest a host-layer thread heartbeat when the current Codex host supports wakeups. The heartbeat should wake the current thread and ask Codex to read Dispatch Engine JSON state, summarize material changes, and request user input only for decisions or unrecoverable blockers.
-10. If no heartbeat is configured or supported, tell the user that Codex will read the latest `.dispatch/` state when they next ask for progress.
-11. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files.
-12. Resolve decisions explicitly after user approval, using `resolve-decision`.
-13. Report validation evidence and residual risk.
+9. Immediately after every successful interactive detached launch, create a host-layer thread heartbeat for the current thread. This is required when the host supports wakeups.
+10. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
+11. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
+12. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files.
+13. Resolve decisions explicitly after user approval, using `resolve-decision`.
+14. Report validation evidence and residual risk.
 
 ## Runtime Loop
 
@@ -47,14 +48,17 @@ The loop is imported plan -> DE launches provider coordinator -> coordinator spa
 Detached execution is not the same as proactive foreground awareness. Dispatch
 Engine can keep writing state in the background, but interactive Codex only
 interprets that state after a user message or a host wakeup such as a thread
-heartbeat automation.
+heartbeat automation. For interactive detached runs, that heartbeat is a
+required supervision companion and must be stopped when the run reaches a
+terminal state.
 
 If host wakeups are unavailable, use this wording:
 
 ```text
-This detached Dispatch Engine run will keep writing queryable state under
-.dispatch/, but this Codex chat will not wake itself automatically. I can check
-the latest status whenever you send a message asking for progress.
+This host cannot create the required Dispatch Engine heartbeat for this thread.
+The detached run would still write queryable state under .dispatch/, but this
+chat would not be proactively supervised. Please confirm whether to continue
+without proactive observation or switch to a foreground/debug run.
 ```
 
 See `references/orchestrator-loop.md` for the adapter-neutral design.

@@ -6,8 +6,9 @@ doc_type: runbook
 
 # Heartbeat Observation
 
-Use this runbook when interactive Codex starts a detached Dispatch Engine run
-and needs a truthful way to keep the foreground conversation updated.
+Use this runbook whenever interactive Codex starts a detached Dispatch Engine
+run. Heartbeat observation is required for interactive detached runs when the
+Codex host supports thread wakeups.
 
 ## Boundary
 
@@ -23,19 +24,22 @@ read and explain that state.
 Dispatch Engine itself does not send chat messages, schedule host wakeups, or
 own the heartbeat. Keep heartbeat configuration in the Codex host layer.
 
-## When To Use A Heartbeat
+## Required Lifecycle
 
-Create or suggest a host thread heartbeat after `de run <repo> --detach` when:
+After every successful interactive `de run <repo> --detach` launch:
 
-- the run is expected to last more than a few minutes
-- workers, reviewers, or validators may finish while the user is away
-- pending decisions, protocol violations, or failed agents need timely user
-  attention
-- the user asked for proactive progress updates
-- the run has expensive or high-risk work where stale status would be costly
+1. Create a host thread heartbeat for the current Codex thread.
+2. Store enough prompt context for the heartbeat to identify the target repo,
+   Dispatch Engine skill path, run id when known, and last seen event cursor.
+3. On each wakeup, read `status --json`, `events --since`, and `alerts --json`.
+4. Report only material changes.
+5. If the run reaches `completed`, `failed`, or `cancelled`, report the terminal
+   state once, then pause, delete, or otherwise stop the heartbeat.
 
-Do not create a heartbeat for quick checks where Codex can simply run
-`status --json` before answering the next user message.
+This is a lifecycle requirement, not an optional recommendation. Do not treat a
+detached run as proactively supervised until the heartbeat exists. If the host
+cannot create a heartbeat, tell the user before continuing the detached run
+workflow.
 
 ## Interval Guidance
 
@@ -47,8 +51,9 @@ Use the quietest interval that still protects the user:
 - **30 minutes**: long-running validation, slow research, or low-urgency
   background work.
 
-Stop or let the heartbeat expire after the run completes, fails unrecoverably,
-or no longer needs proactive observation.
+Stop the heartbeat after the run completes, fails unrecoverably, is cancelled,
+or is explicitly abandoned by the user. Do not leave stale heartbeat monitors
+polling finished Dispatch Engine runs.
 
 ## Heartbeat Prompt
 
@@ -69,7 +74,9 @@ completion, or validation evidence.
 
 If a pending decision needs user approval, summarize the options and ask the
 user before running resolve-decision. Do not resolve decisions on your own. Do
-not claim progress from chat memory alone.
+not claim progress from chat memory alone. If status --json shows the run is
+completed, failed, or cancelled, report that terminal state and stop this
+heartbeat.
 ```
 
 If the host supports per-run context, include the run id and last seen event id.
@@ -108,15 +115,8 @@ Use the Codex-facing CLI surfaces in this order:
 When host wakeups are unavailable, say:
 
 ```text
-This detached Dispatch Engine run will keep writing queryable state under
-.dispatch/, but this Codex chat will not wake itself automatically. I can check
-the latest status whenever you send a message asking for progress.
-```
-
-When wakeups exist but the user has not approved one, say:
-
-```text
-I can leave the detached run queryable under .dispatch/ and check it on your
-next message, or I can set up a host heartbeat so this thread periodically wakes
-and I summarize only material changes.
+This host cannot create the required Dispatch Engine heartbeat for this thread.
+The detached run would still write queryable state under .dispatch/, but this
+chat would not be proactively supervised. Please confirm whether to continue
+without proactive observation or switch to a foreground/debug run.
 ```

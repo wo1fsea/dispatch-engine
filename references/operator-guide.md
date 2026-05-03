@@ -114,13 +114,15 @@ python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 
 Omitting `--provider` defaults to provider `codex`, using a `codex exec` command shape. `--provider codex` selects the same provider explicitly. `--provider claude` is optional and uses a Claude CLI command shape based on `claude -p`.
 
-Detached runs do not automatically wake the foreground Codex chat. For
-long-running work, interactive Codex should create or suggest a host-layer
-thread heartbeat when the current host supports wakeups. The heartbeat wakes
-Codex, and Codex then reads Dispatch Engine state and reports only material
-changes. Dispatch Engine does not send chat messages or own the host wakeup.
+Detached runs do not automatically wake the foreground Codex chat. After every
+successful interactive `run --detach`, interactive Codex must create a
+host-layer thread heartbeat when the current host supports wakeups. The
+heartbeat wakes Codex, and Codex then reads Dispatch Engine state and reports
+only material changes. When the run completes, fails, or is cancelled, Codex
+must stop the heartbeat. Dispatch Engine does not send chat messages or own the
+host wakeup.
 
-See `references/heartbeat-observation.md` for when to create a heartbeat,
+See `references/heartbeat-observation.md` for the required heartbeat lifecycle,
 recommended intervals, the heartbeat prompt shape, material-change rules, and
 fallback wording when wakeups are unavailable.
 
@@ -190,7 +192,7 @@ Accepted project changes belong in normal source, test, docs, spec, or configura
 - `run` fails because `codex` is unavailable: install or configure the Codex CLI, or use `--provider claude` when the Claude CLI is intentionally available.
 - `run --provider claude` fails because `claude` is unavailable: install/configure Claude CLI or use the default Codex provider.
 - Progress looks stale: check `status`, then `tail`, then inspect `.dispatch/runs/<run-id>/logs/` and `.dispatch/runs/<run-id>/events.jsonl`.
-- Host wakeups are unavailable: tell the user, "This detached Dispatch Engine run will keep writing queryable state under `.dispatch/`, but this Codex chat will not wake itself automatically. I can check the latest status whenever you send a message asking for progress."
+- Host wakeups are unavailable: tell the user, "This host cannot create the required Dispatch Engine heartbeat for this thread. The detached run would still write queryable state under `.dispatch/`, but this chat would not be proactively supervised. Please confirm whether to continue without proactive observation or switch to a foreground/debug run."
 - A coordinator edited project files directly: treat that as a protocol violation. Reassign implementation to registered workers/reviewers/validators and keep coordinator output as orchestration evidence only.
 
 ## Validation Commands

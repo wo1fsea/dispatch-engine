@@ -7,7 +7,7 @@ status: ready-review
 implementation: completed
 validation: passed
 coordinator: dispatch-engine
-updated: 2026-05-02
+updated: 2026-05-03
 ---
 
 # Status
@@ -23,7 +23,10 @@ The spec and guidance baseline is complete. The host heartbeat runbook is
 documented in `references/heartbeat-observation.md` and linked from the skill,
 README, and operator docs. Runtime now exposes the Codex-facing control
 surfaces: `status --json` `next_actions`, `events --since`, `alerts --json`,
-and `resolve-decision`.
+and `resolve-decision`. The heartbeat policy has been tightened: heartbeat
+observation is required after every interactive detached launch when the host
+supports wakeups, and the heartbeat must be stopped once the run reaches a
+terminal state.
 
 ## Workstreams
 
@@ -31,7 +34,7 @@ and `resolve-decision`.
 |---|---|---|---|---|---|---|
 | 01 | Spec and guidance baseline | validated | codex | main | rfc-0014 | 2026-05-02 |
 | 02 | Codex-facing control surface | validated | codex | main | 01 | 2026-05-02 |
-| 03 | Host heartbeat runbook | validated | codex | main | 01 | 2026-05-02 |
+| 03 | Host heartbeat runbook | validated | codex | main | 01 | 2026-05-03 |
 | 04 | Validation and dogfood | validated | codex | main | 02, 03 | 2026-05-02 |
 
 ## Validation

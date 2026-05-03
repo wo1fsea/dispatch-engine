@@ -76,12 +76,13 @@ writing run state. Dry-run output includes the resolved command, run id, state
 directory, and coordinator prompt marker or preview.
 
 Detached execution does not make the foreground chat automatically aware of
-background changes. Interactive Codex should either check `de status --json`
-when the user asks, or use a host-provided thread heartbeat/wakeup mechanism
-when available. In this Codex desktop host, that means creating or suggesting a
-heartbeat automation for long-running detached work. The heartbeat wakes the
-current thread; Codex then reads Dispatch Engine state and reports material
-changes. Dispatch Engine itself does not send chat messages or wake the thread.
+background changes. For every interactive `de run --detach` launch, interactive
+Codex must create a host-provided thread heartbeat/wakeup immediately after the
+detached launch succeeds, then use that heartbeat to check Dispatch Engine
+state until the run reaches a terminal state. When the run completes, fails, or
+is cancelled, interactive Codex must pause, delete, or otherwise stop the
+heartbeat. Dispatch Engine itself does not send chat messages or wake the
+thread; heartbeat lifecycle belongs to the Codex host layer.
 
 Live runs write a prompt snapshot and process logs under the target repository's
 run state:
@@ -122,10 +123,12 @@ files, allowed write roots, validation expectations, and report path.
 5. Preview the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
-8. For long-running detached work, create or suggest a host-layer heartbeat monitor when the current Codex host supports thread wakeups. Use `references/heartbeat-observation.md` for interval guidance, prompt wording, material-change rules, and fallback wording.
-9. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.
-10. Resolve pending decisions explicitly after user approval with `resolve-decision`.
-11. Record validation evidence before claiming a run is complete.
+8. Immediately create a host-layer heartbeat monitor for the current thread after every successful interactive detached launch. This is required, not optional, when the host supports thread wakeups.
+9. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
+10. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
+11. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.
+12. Resolve pending decisions explicitly after user approval with `resolve-decision`.
+13. Record validation evidence before claiming a run is complete.
 
 ## Coordinator And Agent Protocol
 

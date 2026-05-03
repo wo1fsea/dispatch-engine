@@ -67,23 +67,26 @@ Codex distinguish material changes from unchanged background activity.
 
 ## Heartbeat Prompt Contract
 
-When the Codex host supports a thread heartbeat, interactive Codex should create
-or suggest one after `de run --detach` for long-running work. The heartbeat task
-should:
+When the Codex host supports a thread heartbeat, interactive Codex must create
+one after every successful interactive `de run --detach`. The heartbeat task
+must:
 
 1. Read the target repo path and Dispatch Engine skill path from the prompt.
 2. Run `de status <repo> --json`.
-3. Optionally run `de events <repo> --since <last-seen-event-id> --json` once
-   event delta support exists.
+3. Run `de events <repo> --since <last-seen-event-id> --json` when an event
+   cursor is available.
 4. Report only material changes: completed workstreams, blocked workstreams,
    failed agents, pending decisions, new protocol violations, run completion,
    or validation evidence.
 5. Ask for user input only when a pending decision or unrecoverable blocker is
    present.
-6. Avoid claiming live progress from chat memory alone.
+6. Stop the heartbeat after reporting a terminal run state such as `completed`,
+   `failed`, or `cancelled`.
+7. Avoid claiming live progress from chat memory alone.
 
-If no heartbeat is configured or supported, the skill should state that Codex
-will check the latest `.dispatch/` state when the user next asks.
+If heartbeat cannot be configured, the skill must warn that the detached run
+will not be proactively supervised in the foreground chat and ask before
+continuing without heartbeat observation.
 
 ## Runtime Snapshot Direction
 

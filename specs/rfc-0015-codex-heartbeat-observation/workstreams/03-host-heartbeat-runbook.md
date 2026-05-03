@@ -3,15 +3,16 @@ language: en-US
 audience: agent
 doc_type: workstream
 status: documented
-updated: 2026-05-02
+updated: 2026-05-03
 ---
 
 # 03 - Host Heartbeat Runbook
 
 ## Scope
 
-Documented how interactive Codex should create or suggest a thread heartbeat
-monitor after starting a detached run in hosts that support wakeups.
+Documented how interactive Codex must create a thread heartbeat monitor after
+starting every interactive detached run in hosts that support wakeups, and how
+to stop the heartbeat after terminal run state.
 
 The runbook now lives at `references/heartbeat-observation.md` and is linked
 from `SKILL.md`, `README.md`, `references/operator-flow.md`, and
@@ -19,11 +20,12 @@ from `SKILL.md`, `README.md`, `references/operator-flow.md`, and
 
 The runbook includes:
 
-- when to create a heartbeat
+- required heartbeat lifecycle
 - recommended interval guidance
 - heartbeat prompt shape
 - material-change reporting rules
 - fallback wording when host wakeups are unavailable
+- terminal-state shutdown behavior
 - control-surface order: `status --json`, `events --since`, `alerts --json`,
   and `resolve-decision` after user approval
 

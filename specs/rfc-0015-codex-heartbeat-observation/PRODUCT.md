@@ -29,8 +29,8 @@ status, decisions, alerts, and protocol violations for the user.
 - Goal: Keep `de` commands Codex-facing and JSON-first.
 - Goal: Define and implement the Codex-facing surfaces for status
   interpretation, decision resolution, events, and alerts.
-- Goal: Require skill/operator guidance for starting a detached run with an
-  optional thread heartbeat monitor when the host supports it.
+- Goal: Require skill/operator guidance for starting every interactive detached
+  run with a thread heartbeat monitor when the host supports it.
 - Non-goal: Build a human dashboard or terminal UI.
 - Non-goal: Make Dispatch Engine send chat messages directly.
 - Non-goal: Assume every Codex host supports heartbeat automation.
@@ -42,10 +42,10 @@ status, decisions, alerts, and protocol violations for the user.
 After interactive Codex starts a detached Dispatch Engine run, the user has an
 honest progress model:
 
-- If the host supports heartbeat automation, Codex can wake this thread on a
+- If the host supports heartbeat automation, Codex must wake this thread on a
   schedule, read Dispatch Engine state, and report material changes.
-- If no heartbeat is configured, Codex can still report the latest state when
-  the user asks.
+- If heartbeat cannot be configured, Codex must tell the user before continuing
+  without proactive observation.
 - Dispatch Engine remains the source of durable truth through `.dispatch/` and
   JSON CLI output.
 
@@ -54,7 +54,7 @@ honest progress model:
 ```text
 user <-> interactive Codex chat
               |
-              | creates plan, starts detached run, optionally creates heartbeat
+              | creates plan, starts detached run, creates required heartbeat
               v
         de run --detach
               |
@@ -76,10 +76,13 @@ heartbeat wakeup or user question -> Codex reads de status/events/alerts --json
    Codex.
 3. The spec defines heartbeat automation as the preferred host-layer wakeup
    mechanism when available.
-4. The spec defines fallback behavior when no heartbeat exists: Codex checks
-   status on the next user message.
+4. The spec defines fallback behavior when heartbeat cannot be configured:
+   Codex must warn the user and ask before continuing without proactive
+   observation.
 5. The implementation provides runtime surfaces:
    `status --json`, event delta reads, alert snapshots, and decision resolution
    by machine-readable command.
 6. Existing docs avoid implying that the foreground chat continuously polls
    without a host wakeup.
+7. Heartbeat guidance requires stopping the heartbeat after the run reaches a
+   terminal state.

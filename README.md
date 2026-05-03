@@ -88,12 +88,13 @@ command shape; `--provider codex` selects that same provider explicitly.
 `claude -p`.
 
 Detached runs keep the chat responsive, but they do not automatically wake the
-foreground Codex chat. For long-running work, interactive Codex should create or
-suggest a host-layer thread heartbeat when available. The heartbeat wakes Codex,
-which then reads `status --json`, `events --since` deltas, and `alerts --json`
-snapshots before reporting material changes. Without a heartbeat, Codex checks
-status when the user next asks. Dispatch Engine does not send chat messages or
-own the wakeup.
+foreground Codex chat. After every successful interactive `run --detach`,
+interactive Codex must create a host-layer thread heartbeat when the host
+supports wakeups. The heartbeat wakes Codex, which then reads `status --json`,
+`events --since` deltas, and `alerts --json` snapshots before reporting
+material changes. When the run completes, fails, or is cancelled, Codex must
+stop the heartbeat. Dispatch Engine does not send chat messages or own the
+wakeup.
 
 Target repo quickstart:
 
@@ -176,7 +177,7 @@ necessary.
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
 - Use the runtime for explicit plan import, foreground or detached coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
-- Treat host heartbeat/wakeup automation as the observation trigger for proactive chat updates; Dispatch Engine writes queryable state but does not wake or message the chat directly.
+- Treat host heartbeat/wakeup automation as the required observation trigger for proactive chat updates after interactive detached launches; Dispatch Engine writes queryable state but does not wake or message the chat directly.
 - Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `supervisors/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
 - Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
 - Keep runtime prompt templates centralized in `references/prompts/`.
