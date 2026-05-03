@@ -94,7 +94,10 @@ supports wakeups. The heartbeat wakes Codex, which then reads `status --json`,
 `events --since` deltas, and `alerts --json` snapshots before reporting
 material changes. When the run completes, fails, or is cancelled, Codex must
 stop the heartbeat. The default heartbeat interval is 15 minutes. Dispatch
-Engine does not send chat messages or own the wakeup.
+Engine does not send chat messages or own the wakeup. If the same technical
+decision remains unanswered across four consecutive heartbeat checks, outer
+Codex may choose a conservative, reversible option, record it in Dispatch
+Engine state, and report all autonomous choices at completion.
 
 Target repo quickstart:
 

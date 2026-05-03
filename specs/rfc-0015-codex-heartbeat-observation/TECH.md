@@ -80,9 +80,13 @@ must:
    or validation evidence.
 5. Ask for user input only when a pending decision or unrecoverable blocker is
    present.
-6. Stop the heartbeat after reporting a terminal run state such as `completed`,
+6. If the same pending technical decision remains unresolved after four
+   consecutive heartbeat checks, choose the conservative/reversible technical
+   option, resolve it with actor `interactive-codex-autonomous`, and record the
+   rationale for final reporting.
+7. Stop the heartbeat after reporting a terminal run state such as `completed`,
    `failed`, or `cancelled`.
-7. Avoid claiming live progress from chat memory alone.
+8. Avoid claiming live progress from chat memory alone.
 
 The default heartbeat interval is 15 minutes. In Codex App heartbeat
 configuration, use `FREQ=MINUTELY;INTERVAL=15` unless the operator records a

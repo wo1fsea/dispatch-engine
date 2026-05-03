@@ -120,7 +120,11 @@ host-layer thread heartbeat when the current host supports wakeups. The
 heartbeat wakes Codex, and Codex then reads Dispatch Engine state and reports
 only material changes. When the run completes, fails, or is cancelled, Codex
 must stop the heartbeat. Dispatch Engine does not send chat messages or own the
-host wakeup. The default heartbeat interval is 15 minutes.
+host wakeup. The default heartbeat interval is 15 minutes. If the same pending
+technical decision remains unanswered across four consecutive heartbeat checks,
+outer Codex may select a conservative, reversible option and record it with
+actor `interactive-codex-autonomous`; final reporting must list all such
+autonomous choices.
 
 See `references/heartbeat-observation.md` for the required heartbeat lifecycle,
 recommended intervals, the heartbeat prompt shape, material-change rules, and
@@ -146,7 +150,8 @@ python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
 `status --json` is the primary summary surface for Codex. Heartbeat checks can
 also use `events --since <event-id> --json`, `alerts --json`, and
 `resolve-decision --id <decision-id> --option <option-id> --json` after
-explicit user approval.
+explicit user approval or an allowed four-heartbeat autonomous technical
+fallback.
 
 Runtime state is stored under:
 

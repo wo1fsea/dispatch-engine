@@ -18,7 +18,10 @@ blocker, or scope-change point.
 - Record blockers when a workstream cannot proceed safely until the issue is
   resolved.
 - Resolve decision and blocker records only after the operator or interactive
-  Codex has made the choice explicit.
+  Codex has made the choice explicit. Interactive Codex may also make a
+  conservative autonomous technical choice after four unanswered heartbeat
+  checks, using actor `interactive-codex-autonomous`; coordinators should not
+  invent that fallback themselves.
 - Keep runtime use mechanical: append/query records under `.dispatch/`, inspect
   unresolved blockers, and expose status.
 

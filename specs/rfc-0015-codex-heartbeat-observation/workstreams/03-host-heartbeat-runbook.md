@@ -26,6 +26,7 @@ The runbook includes:
 - material-change reporting rules
 - fallback wording when host wakeups are unavailable
 - terminal-state shutdown behavior
+- four-heartbeat autonomous technical-decision fallback
 - control-surface order: `status --json`, `events --since`, `alerts --json`,
   and `resolve-decision` after user approval
 

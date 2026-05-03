@@ -35,6 +35,9 @@ After every successful interactive `de run <repo> --detach` launch:
 4. Report only material changes.
 5. If the run reaches `completed`, `failed`, or `cancelled`, report the terminal
    state once, then pause, delete, or otherwise stop the heartbeat.
+6. Track pending technical decisions across heartbeat wakeups. If the same
+   technical decision is still unresolved after four consecutive heartbeat
+   checks, apply the autonomous technical-decision rule below.
 
 This is a lifecycle requirement, not an optional recommendation. Do not treat a
 detached run as proactively supervised until the heartbeat exists. If the host
@@ -81,10 +84,17 @@ workstreams, failed agents, pending decisions, new protocol violations, run
 completion, or validation evidence.
 
 If a pending decision needs user approval, summarize the options and ask the
-user before running resolve-decision. Do not resolve decisions on your own. Do
+user before running resolve-decision. Do not resolve decisions on your own
+unless the four-heartbeat autonomous technical-decision fallback applies. Do
 not claim progress from chat memory alone. If status --json shows the run is
 completed, failed, or cancelled, report that terminal state and stop this
 heartbeat.
+
+If the same pending technical decision has been reported across four
+consecutive heartbeat checks without user resolution, choose the conservative
+technical option, run resolve-decision with actor interactive-codex-autonomous,
+and continue the run. Record the resolution text so the final report can list
+every autonomous choice.
 ```
 
 If the host supports per-run context, include the run id and last seen event id.
@@ -98,12 +108,50 @@ Report only material changes:
 - run completed, failed, or became blocked
 - workstream completed, failed, or needs reassignment
 - agent failed, stopped heartbeating, or produced malformed evidence
-- new pending decision requires user approval
+- new pending decision requires user approval, or qualifies for the
+  four-heartbeat autonomous technical-decision fallback
 - new protocol violation needs repair
 - new validation evidence changes confidence in completion
 
 Skip unchanged activity. A heartbeat that finds no material change should stay
 quiet unless the host requires a visible update.
+
+## Autonomous Technical Decisions
+
+After four consecutive heartbeat checks where the same pending technical
+decision remains unresolved by the user, outer Codex may resolve that decision
+without waiting longer, but only when all of these are true:
+
+- the decision is technical rather than product, legal, financial, security,
+  privacy, deployment, credential, or irreversible data behavior
+- the choice stays inside the already approved user objective
+- the selected option is conservative, reversible, and minimizes new scope
+- the selected option does not discard or overwrite user or worker changes
+- the selected option can be validated by normal project checks
+
+Do not autonomously resolve decisions that change product behavior, authorize
+deployment, handle secrets, delete data, broaden business scope, or create
+nontrivial user-facing commitments. Keep those pending and keep asking.
+
+When autonomous resolution is allowed, use the existing decision surface:
+
+```bash
+python3 scripts/de.py resolve-decision <repo> \
+  --id <decision-id> \
+  --option <option-id> \
+  --actor interactive-codex-autonomous \
+  --resolution "Autonomous technical choice after 4 unanswered heartbeat checks: <why this option is conservative/reversible>." \
+  --json
+```
+
+The heartbeat must keep an in-thread list of autonomous choices made during the
+run. The final completion report must include every autonomous decision with:
+
+- decision id
+- selected option
+- why it qualified as technical
+- why the selected option was conservative
+- validation evidence after the choice
 
 ## Control Surfaces
 
@@ -116,7 +164,8 @@ Use the Codex-facing CLI surfaces in this order:
 3. `alerts --json`: snapshot of decisions, failures, violations, and other
    user-relevant risks.
 4. `resolve-decision --id <decision-id> --option <option-id> --json`: write
-   surface, only after explicit user approval.
+   surface, only after explicit user approval or an allowed four-heartbeat
+   autonomous technical-decision fallback.
 
 ## Fallback Wording
 

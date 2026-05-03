@@ -69,6 +69,10 @@ Interactive Codex / operator:
 - Remains the decision maker.
 - Records the resolution so future status, tail, and continuation work can see
   why the run proceeded.
+- May make an autonomous technical decision only after the same pending
+  technical choice has remained unresolved across four consecutive heartbeat
+  checks. Autonomous resolution must be conservative, reversible, inside the
+  approved objective, and recorded with actor `interactive-codex-autonomous`.
 
 ## Runtime Records
 
@@ -134,3 +138,28 @@ blockers should report:
 
 Pending decisions are not automatically resolved by validation. They remain
 pending until a recorded resolution exists.
+
+## Autonomous Technical Decision Fallback
+
+Heartbeat observation may encounter a technical decision that blocks progress
+while the user is away. After four consecutive heartbeat checks with the same
+pending technical decision still unresolved, interactive Codex may select a
+technical option and continue work.
+
+This fallback is allowed only for technical implementation choices such as
+internal API shape, adapter strategy, test organization, validation retry
+strategy, or similarly reversible engineering tradeoffs. It is not allowed for
+product behavior, security/privacy posture, deployment, credentials,
+destructive data actions, legal/financial judgments, or broadening the user's
+business objective.
+
+Autonomous resolutions must be recorded in `decisions.jsonl` through
+`resolve-decision` with:
+
+- `resolved_by` / `actor`: `interactive-codex-autonomous`
+- selected option id
+- resolution text stating that four heartbeat checks elapsed
+- rationale for why the selected option is conservative and reversible
+
+At final completion, interactive Codex must report all autonomous technical
+decisions together, even if the implementation succeeded.

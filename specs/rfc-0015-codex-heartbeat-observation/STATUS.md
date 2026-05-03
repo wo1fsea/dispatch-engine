@@ -27,6 +27,10 @@ and `resolve-decision`. The heartbeat policy has been tightened: heartbeat
 observation is required after every interactive detached launch when the host
 supports wakeups, and the heartbeat must be stopped once the run reaches a
 terminal state. The default heartbeat interval is 15 minutes.
+After four consecutive heartbeat checks with the same pending technical
+decision unresolved, outer Codex may make a conservative autonomous technical
+choice, record it with actor `interactive-codex-autonomous`, continue the run,
+and report all such choices at completion.
 
 ## Workstreams
 

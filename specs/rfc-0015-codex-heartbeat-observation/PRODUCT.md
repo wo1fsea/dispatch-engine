@@ -26,6 +26,7 @@ status, decisions, alerts, and protocol violations for the user.
   or a Codex host heartbeat/wakeup.
 - Goal: Define heartbeat observation as a host-layer mechanism, not a Dispatch
   Engine daemon responsibility.
+- Goal: Define the four-heartbeat fallback for unresolved technical decisions.
 - Goal: Keep `de` commands Codex-facing and JSON-first.
 - Goal: Define and implement the Codex-facing surfaces for status
   interpretation, decision resolution, events, and alerts.
@@ -86,3 +87,6 @@ heartbeat wakeup or user question -> Codex reads de status/events/alerts --json
    without a host wakeup.
 7. Heartbeat guidance requires stopping the heartbeat after the run reaches a
    terminal state.
+8. Heartbeat guidance allows outer Codex to make conservative autonomous
+   technical choices after four consecutive unresolved heartbeat checks, while
+   requiring all such choices to be reported at completion.
