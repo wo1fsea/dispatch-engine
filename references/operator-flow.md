@@ -35,10 +35,18 @@ progress or asks for decisions.
 7. Preview coordinator launch with `python3 scripts/de.py run <repo> --dry-run`; omitting `--provider` uses the default `codex` provider, while `--provider claude` is optional.
 8. Prefer `python3 scripts/de.py run <repo> --detach` from interactive Codex so the conversation can continue while status and tail are polled.
 9. Immediately after every successful interactive detached launch, create a host-layer thread heartbeat for the current thread. This is required when the host supports wakeups, and the default interval is 15 minutes.
-10. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
+10. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
 11. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
 12. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files.
-13. Resolve decisions explicitly after user approval, using `resolve-decision`. Technical decisions may be resolved autonomously only after four consecutive unanswered heartbeat checks and must use actor `interactive-codex-autonomous`.
+13. Resolve decisions explicitly after user approval, using `resolve-decision`.
+    Technical decisions may be resolved autonomously only after four
+    consecutive unanswered heartbeat checks. Use `resolve-decision
+    --autonomous-technical --unanswered-heartbeats <count>
+    --autonomous-rationale <text> --validation-expected <command> --json`; the
+    runtime defaults actor to `interactive-codex-autonomous`, writes the
+    source-of-truth record to `decisions.jsonl`, validates only metadata
+    invariants, and exposes a convenience `status --json`
+    `autonomous_decisions` summary.
 14. Report validation evidence, residual risk, and all autonomous technical choices made during the run.
 
 ## Runtime Loop

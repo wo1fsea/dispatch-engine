@@ -71,8 +71,11 @@ Interactive Codex / operator:
   why the run proceeded.
 - May make an autonomous technical decision only after the same pending
   technical choice has remained unresolved across four consecutive heartbeat
-  checks. Autonomous resolution must be conservative, reversible, inside the
-  approved objective, and recorded with actor `interactive-codex-autonomous`.
+  checks. Outer interactive Codex plus heartbeat observation owns this
+  eligibility judgment. Autonomous resolution must be conservative,
+  reversible, inside the approved objective, and recorded with
+  `resolve-decision --autonomous-technical`, which uses actor
+  `interactive-codex-autonomous`.
 
 ## Runtime Records
 
@@ -93,6 +96,14 @@ Latest decision records include:
 - timestamps
 - `actor`
 - `resolution`, `resolved_at`, and `resolved_by` once resolved
+- `resolution_mode: autonomous_technical` and `autonomous_decision` metadata
+  when resolved through the autonomous technical fallback
+
+For autonomous technical resolutions, `decisions.jsonl` is the source of truth.
+The runtime persists the supplied metadata, validates mechanical invariants, and
+emits the normal `decision.resolved` event. It does not judge whether the
+decision is truly technical, choose an option, or bypass excluded decision
+categories.
 
 Blockers are append-only records in:
 
@@ -154,12 +165,24 @@ destructive data actions, legal/financial judgments, or broadening the user's
 business objective.
 
 Autonomous resolutions must be recorded in `decisions.jsonl` through
-`resolve-decision` with:
+`resolve-decision` with Codex-facing autonomous metadata:
 
+- `--autonomous-technical`
+- `--unanswered-heartbeats <count>` with a minimum of `4`
+- `--autonomous-rationale <text>`
+- `--validation-expected <command>` for each expected check
+- optional heartbeat context such as `--heartbeat-interval-minutes`,
+  `--first-seen-heartbeat-id`, and `--last-seen-heartbeat-id`
 - `resolved_by` / `actor`: `interactive-codex-autonomous`
 - selected option id
-- resolution text stating that four heartbeat checks elapsed
-- rationale for why the selected option is conservative and reversible
+- `resolution_mode: autonomous_technical`
+- `autonomous_decision` metadata asserting technical scope, conservative and
+  reversible choice, approved objective, excluded categories, rationale, and
+  validation expectations
+
+`status --json` may include an `autonomous_decisions` count and compact records
+for final-report convenience. Use that summary for reporting, but read
+`decisions.jsonl` when durable detail or audit history matters.
 
 At final completion, interactive Codex must report all autonomous technical
 decisions together, even if the implementation succeeded.

@@ -59,6 +59,10 @@ python scripts/de.py status <repo>
 python scripts/de.py events <repo> --since event-000001 --json
 python scripts/de.py alerts <repo> --json
 python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> --json
+python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> \
+  --autonomous-technical --unanswered-heartbeats 4 \
+  --autonomous-rationale "<why this is conservative and reversible>" \
+  --validation-expected "<validation command>" --json
 python scripts/de.py tail <repo>
 ```
 
@@ -127,7 +131,15 @@ files, allowed write roots, validation expectations, and report path.
 9. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
 10. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
 11. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.
-12. Resolve pending decisions explicitly after user approval with `resolve-decision`. If the same technical decision remains unresolved after four consecutive heartbeat checks, interactive Codex may choose a conservative, reversible option, resolve it with actor `interactive-codex-autonomous`, and continue.
+12. Resolve pending decisions explicitly after user approval with
+    `resolve-decision`. If the same technical decision remains unresolved after
+    four consecutive heartbeat checks, interactive Codex plus the heartbeat
+    owns the eligibility judgment and may choose a conservative, reversible
+    option. Record that choice with `resolve-decision --autonomous-technical`;
+    the runtime validates only the supplied metadata invariants, defaults the
+    actor to `interactive-codex-autonomous`, appends the source-of-truth record
+    to `.dispatch/runs/<run-id>/decisions.jsonl`, and exposes a convenience
+    `status --json` `autonomous_decisions` summary.
 13. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
 
 ## Coordinator And Agent Protocol
@@ -164,8 +176,9 @@ logs, status records, and heartbeats for spawned agents live under:
 Live `de run` registers `coordinator-001` with status `running`, then updates it
 to `completed` or `failed` when the provider process exits. `de status` reads
 these files to report coordinator provider/profile/status, agent counts by role
-and status, active assignments, heartbeat counts, pending decisions, and
-protocol violations. Lifecycle events include `coordinator.started`,
+and status, active assignments, heartbeat counts, pending decisions,
+autonomous decision summaries, and protocol violations. Lifecycle events include
+`coordinator.started`,
 `coordinator.completed`, `coordinator.failed`, `agent.spawned`,
 `agent.heartbeat`, `workstream.assigned`, `agent.completed`, `agent.failed`,
 `protocol.violation`, and `decision.requested`.
@@ -193,6 +206,7 @@ repo.
 - Read `references/operator-flow.md` when supervising a run from interactive Codex.
 - Read `references/heartbeat-observation.md` when configuring or explaining detached-run heartbeat observation.
 - Read `specs/rfc-0015-codex-heartbeat-observation/` when changing detached-run observation, heartbeat wakeup guidance, Codex-facing status/actions, or decision-resolution surfaces.
+- Read `specs/rfc-0016-autonomous-decision-records/` when changing autonomous technical-decision records, `resolve-decision --autonomous-technical`, or `status --json` autonomous decision summaries.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.
 - Read `references/orchestrator-loop.md` when designing coordinator-spawned worker, reviewer, validator, evidence, and status/tail flows.

@@ -9,6 +9,7 @@ from typing import Any
 
 from .agents import detect_protocol_violations, list_agents
 from .decisions import (
+    list_autonomous_decisions,
     list_pending_decisions,
     list_unresolved_blockers,
     validate_decision_blocker_state,
@@ -52,6 +53,7 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
     pending_decisions = len(pending_decision_records)
     unresolved_blockers = list_unresolved_blockers(selected)
     decision_blocker_validation = validate_decision_blocker_state(selected)
+    autonomous_decisions = _autonomous_decision_summary(selected)
     events = read_events(selected / "events.jsonl")
     agent_summary = _agent_observability(selected, workstreams, events)
     next_actions = _next_actions(
@@ -77,6 +79,7 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
         "pending_decisions": pending_decisions,
         "unresolved_blockers": len(unresolved_blockers),
         "decision_blocker_validation": decision_blocker_validation,
+        "autonomous_decisions": autonomous_decisions,
         "next_actions": next_actions,
         "state_dir": str(selected),
         "last_event_at": events[-1].get("ts") if events else None,
@@ -221,6 +224,28 @@ def _agent_observability(
         },
         "protocol_violations": protocol_violations,
     }
+
+
+def _autonomous_decision_summary(run_state_dir: Path) -> dict[str, Any]:
+    records = []
+    decisions = sorted(
+        list_autonomous_decisions(run_state_dir),
+        key=lambda item: _record_id(item, "decision_id"),
+    )
+    for decision in decisions:
+        autonomous_decision = decision.get("autonomous_decision", {})
+        if not isinstance(autonomous_decision, dict):
+            autonomous_decision = {}
+        records.append(
+            {
+                "decision_id": _record_id(decision, "decision_id"),
+                "selected_option_id": decision.get("selected_option_id"),
+                "resolved_at": decision.get("resolved_at"),
+                "rationale": autonomous_decision.get("rationale", ""),
+                "validation_expected": autonomous_decision.get("validation_expected", []),
+            }
+        )
+    return {"count": len(records), "records": records}
 
 
 def _next_actions(

@@ -10,6 +10,19 @@ from .events import append_event, decision_requested, utc_timestamp
 
 DECISION_SCHEMA_VERSION = 1
 OPEN_BLOCKER_STATUSES = frozenset({"open", "blocked"})
+AUTONOMOUS_TECHNICAL_ACTOR = "interactive-codex-autonomous"
+AUTONOMOUS_TECHNICAL_MODE = "autonomous_technical"
+AUTONOMOUS_TECHNICAL_TRIGGER = "four_unanswered_heartbeats"
+DEFAULT_HEARTBEAT_INTERVAL_MINUTES = 15
+STANDARD_AUTONOMOUS_EXCLUDED_CATEGORIES = (
+    "product_behavior",
+    "security_privacy",
+    "deployment",
+    "credentials",
+    "destructive_data",
+    "legal_financial",
+    "business_scope",
+)
 
 
 class DecisionBlockerValidationError(ValueError):
@@ -66,6 +79,8 @@ def resolve_decision(
     resolution: str | None = None,
     option_id: str | None = None,
     actor: str = "dispatch-engine",
+    resolution_mode: str | None = None,
+    autonomous_decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append a decision resolution record."""
 
@@ -80,6 +95,12 @@ def resolve_decision(
         resolution = f"Selected option: {option_id}" if option_id else "Decision resolved."
     if not resolution:
         raise DecisionBlockerValidationError("decision resolution must not be empty")
+    if resolution_mode is not None and resolution_mode != AUTONOMOUS_TECHNICAL_MODE:
+        raise DecisionBlockerValidationError(f"unsupported decision resolution_mode: {resolution_mode}")
+    if resolution_mode is None and autonomous_decision is not None:
+        raise DecisionBlockerValidationError("autonomous_decision metadata requires autonomous_technical resolution_mode")
+    if resolution_mode == AUTONOMOUS_TECHNICAL_MODE:
+        autonomous_decision = _validated_autonomous_decision(actor, autonomous_decision)
 
     now = utc_timestamp()
     record = {
@@ -92,6 +113,10 @@ def resolve_decision(
     }
     if option_id is not None:
         record["selected_option_id"] = option_id
+    if resolution_mode is not None:
+        record["resolution_mode"] = resolution_mode
+    if autonomous_decision is not None:
+        record["autonomous_decision"] = autonomous_decision
     _append_jsonl(_decisions_log(run_state_dir), record)
     payload = {"decision_id": decision_id, "resolution": resolution}
     if option_id is not None:
@@ -114,6 +139,16 @@ def list_decisions(run_state_dir: Path) -> list[dict[str, Any]]:
 
 def list_pending_decisions(run_state_dir: Path) -> list[dict[str, Any]]:
     return [item for item in list_decisions(run_state_dir) if item.get("status") == "pending"]
+
+
+def list_autonomous_decisions(run_state_dir: Path) -> list[dict[str, Any]]:
+    """Return resolved autonomous technical decision records."""
+
+    return [
+        item
+        for item in list_decisions(run_state_dir)
+        if item.get("status") == "resolved" and item.get("resolution_mode") == AUTONOMOUS_TECHNICAL_MODE
+    ]
 
 
 def record_blocker(
@@ -262,6 +297,63 @@ def _require_latest(records: list[dict[str, Any]], id_field: str, record_id: str
 def _validate_record_id(record_id: str, field: str) -> None:
     if not record_id or "/" in record_id or "\\" in record_id:
         raise DecisionBlockerValidationError(f"invalid {field}: {record_id!r}")
+
+
+def _validated_autonomous_decision(
+    actor: str,
+    autonomous_decision: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if actor != AUTONOMOUS_TECHNICAL_ACTOR:
+        raise DecisionBlockerValidationError(
+            f"autonomous technical decisions must be resolved by {AUTONOMOUS_TECHNICAL_ACTOR}"
+        )
+    if not isinstance(autonomous_decision, dict):
+        raise DecisionBlockerValidationError("autonomous_decision metadata must be provided")
+
+    record = dict(autonomous_decision)
+    if record.get("trigger") != AUTONOMOUS_TECHNICAL_TRIGGER:
+        raise DecisionBlockerValidationError(
+            f"autonomous_decision trigger must be {AUTONOMOUS_TECHNICAL_TRIGGER}"
+        )
+
+    unanswered_count = record.get("unanswered_heartbeat_count")
+    if not isinstance(unanswered_count, int) or isinstance(unanswered_count, bool) or unanswered_count < 4:
+        raise DecisionBlockerValidationError("unanswered_heartbeat_count must be at least 4")
+
+    heartbeat_interval = record.get("heartbeat_interval_minutes", DEFAULT_HEARTBEAT_INTERVAL_MINUTES)
+    if not isinstance(heartbeat_interval, int) or isinstance(heartbeat_interval, bool) or heartbeat_interval <= 0:
+        raise DecisionBlockerValidationError("heartbeat_interval_minutes must be a positive integer")
+    record["heartbeat_interval_minutes"] = heartbeat_interval
+
+    for field in ("technical_scope", "conservative", "reversible", "inside_approved_objective"):
+        if record.get(field) is not True:
+            raise DecisionBlockerValidationError(f"autonomous_decision {field} must be true")
+
+    rationale = record.get("rationale")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise DecisionBlockerValidationError("autonomous_decision rationale must not be empty")
+
+    excluded_categories = record.get("excluded_categories")
+    if not isinstance(excluded_categories, list) or not all(isinstance(item, str) for item in excluded_categories):
+        raise DecisionBlockerValidationError("autonomous_decision excluded_categories must be a list of strings")
+    missing = sorted(set(STANDARD_AUTONOMOUS_EXCLUDED_CATEGORIES).difference(excluded_categories))
+    if missing:
+        raise DecisionBlockerValidationError(
+            "autonomous_decision excluded_categories missing standard categories: "
+            + ", ".join(missing)
+        )
+
+    validation_expected = record.get("validation_expected")
+    if (
+        not isinstance(validation_expected, list)
+        or not validation_expected
+        or not all(isinstance(item, str) and item.strip() for item in validation_expected)
+    ):
+        raise DecisionBlockerValidationError(
+            "autonomous_decision validation_expected must be a non-empty list of strings"
+        )
+
+    return record
 
 
 def _validate_decision_option(record: dict[str, Any], option_id: str) -> None:

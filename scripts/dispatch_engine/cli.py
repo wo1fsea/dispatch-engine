@@ -8,7 +8,15 @@ from pathlib import Path
 
 from . import __version__
 from .coordinators import CoordinatorLaunchError, launch_run_coordinator, render_run_dry_run
-from .decisions import DecisionBlockerValidationError, resolve_decision
+from .decisions import (
+    AUTONOMOUS_TECHNICAL_ACTOR,
+    AUTONOMOUS_TECHNICAL_MODE,
+    AUTONOMOUS_TECHNICAL_TRIGGER,
+    DEFAULT_HEARTBEAT_INTERVAL_MINUTES,
+    DecisionBlockerValidationError,
+    STANDARD_AUTONOMOUS_EXCLUDED_CATEGORIES,
+    resolve_decision,
+)
 from .plan_schema import PlanValidationError, import_dispatch_plan
 from .state import run_alerts, run_events, run_status, tail_events
 from .supervisor import launch_detached_coordinator
@@ -56,8 +64,35 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_parser.add_argument("--id", required=True, help="Decision id to resolve.")
     resolve_parser.add_argument("--option", required=True, help="Selected option id.")
     resolve_parser.add_argument("--run-id", help="Resolve a specific run id instead of the latest run.")
-    resolve_parser.add_argument("--actor", default="dispatch-engine", help="Actor recorded in decision state.")
+    resolve_parser.add_argument("--actor", help="Actor recorded in decision state.")
     resolve_parser.add_argument("--resolution", help="Resolution text to record.")
+    resolve_parser.add_argument(
+        "--autonomous-technical",
+        action="store_true",
+        help="Record this as an autonomous technical decision after unanswered heartbeats.",
+    )
+    resolve_parser.add_argument("--unanswered-heartbeats", type=int, help="Unanswered heartbeat count.")
+    resolve_parser.add_argument(
+        "--heartbeat-interval-minutes",
+        type=int,
+        default=DEFAULT_HEARTBEAT_INTERVAL_MINUTES,
+        help="Heartbeat interval used for autonomous decision observation.",
+    )
+    resolve_parser.add_argument("--first-seen-heartbeat-id", help="First unanswered heartbeat id.")
+    resolve_parser.add_argument("--last-seen-heartbeat-id", help="Last unanswered heartbeat id.")
+    resolve_parser.add_argument("--autonomous-rationale", help="Rationale for the autonomous technical decision.")
+    resolve_parser.add_argument(
+        "--validation-expected",
+        action="append",
+        default=[],
+        help="Expected validation after the autonomous decision; repeatable.",
+    )
+    resolve_parser.add_argument(
+        "--excluded-category",
+        action="append",
+        default=[],
+        help="Excluded non-autonomous category asserted during autonomous decision review; repeatable.",
+    )
     _add_json_flag(resolve_parser)
 
     run_parser = subparsers.add_parser("run", help="Render or launch a provider CLI coordinator.")
@@ -122,6 +157,14 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             actor=args.actor,
             resolution=args.resolution,
+            autonomous_technical=args.autonomous_technical,
+            unanswered_heartbeats=args.unanswered_heartbeats,
+            heartbeat_interval_minutes=args.heartbeat_interval_minutes,
+            first_seen_heartbeat_id=args.first_seen_heartbeat_id,
+            last_seen_heartbeat_id=args.last_seen_heartbeat_id,
+            autonomous_rationale=args.autonomous_rationale,
+            validation_expected=args.validation_expected,
+            excluded_categories=args.excluded_category,
         )
         return _print(result, args.json)
 
@@ -330,8 +373,16 @@ def _resolve_decision_command(
     decision_id: str,
     option_id: str,
     run_id: str | None,
-    actor: str,
+    actor: str | None,
     resolution: str | None,
+    autonomous_technical: bool = False,
+    unanswered_heartbeats: int | None = None,
+    heartbeat_interval_minutes: int = DEFAULT_HEARTBEAT_INTERVAL_MINUTES,
+    first_seen_heartbeat_id: str | None = None,
+    last_seen_heartbeat_id: str | None = None,
+    autonomous_rationale: str | None = None,
+    validation_expected: list[str] | None = None,
+    excluded_categories: list[str] | None = None,
 ) -> dict:
     from .runs import resolve_run_dir
 
@@ -347,13 +398,44 @@ def _resolve_decision_command(
             result["run_id"] = run_id
         return result
 
+    resolved_actor = actor or "dispatch-engine"
+    resolution_mode = None
+    autonomous_decision = None
+    if autonomous_technical:
+        if actor is not None and actor != AUTONOMOUS_TECHNICAL_ACTOR:
+            return {
+                "kind": "error",
+                "status": "invalid_decision_resolution",
+                "summary": f"--autonomous-technical requires --actor {AUTONOMOUS_TECHNICAL_ACTOR}",
+                "run_id": selected.name,
+                "state_dir": str(selected),
+            }
+        resolved_actor = AUTONOMOUS_TECHNICAL_ACTOR
+        resolution_mode = AUTONOMOUS_TECHNICAL_MODE
+        autonomous_decision = _autonomous_decision_metadata(
+            unanswered_heartbeats=unanswered_heartbeats,
+            heartbeat_interval_minutes=heartbeat_interval_minutes,
+            first_seen_heartbeat_id=first_seen_heartbeat_id,
+            last_seen_heartbeat_id=last_seen_heartbeat_id,
+            autonomous_rationale=autonomous_rationale,
+            validation_expected=validation_expected or [],
+            excluded_categories=excluded_categories or [],
+        )
+        if resolution is None:
+            resolution = (
+                f"Autonomous technical choice after "
+                f"{unanswered_heartbeats or 0} unanswered heartbeat checks."
+            )
+
     try:
         decision = resolve_decision(
             selected,
             decision_id,
             option_id=option_id,
             resolution=resolution,
-            actor=actor,
+            actor=resolved_actor,
+            resolution_mode=resolution_mode,
+            autonomous_decision=autonomous_decision,
         )
     except DecisionBlockerValidationError as exc:
         return {
@@ -374,3 +456,37 @@ def _resolve_decision_command(
         "selected_option_id": option_id,
         "decision": decision,
     }
+
+
+def _autonomous_decision_metadata(
+    *,
+    unanswered_heartbeats: int | None,
+    heartbeat_interval_minutes: int,
+    first_seen_heartbeat_id: str | None,
+    last_seen_heartbeat_id: str | None,
+    autonomous_rationale: str | None,
+    validation_expected: list[str],
+    excluded_categories: list[str],
+) -> dict:
+    merged_excluded_categories = list(STANDARD_AUTONOMOUS_EXCLUDED_CATEGORIES)
+    for category in excluded_categories:
+        if category not in merged_excluded_categories:
+            merged_excluded_categories.append(category)
+
+    record = {
+        "trigger": AUTONOMOUS_TECHNICAL_TRIGGER,
+        "unanswered_heartbeat_count": unanswered_heartbeats,
+        "heartbeat_interval_minutes": heartbeat_interval_minutes,
+        "technical_scope": True,
+        "conservative": True,
+        "reversible": True,
+        "inside_approved_objective": True,
+        "excluded_categories": merged_excluded_categories,
+        "rationale": autonomous_rationale,
+        "validation_expected": validation_expected,
+    }
+    if first_seen_heartbeat_id is not None:
+        record["first_seen_heartbeat_id"] = first_seen_heartbeat_id
+    if last_seen_heartbeat_id is not None:
+        record["last_seen_heartbeat_id"] = last_seen_heartbeat_id
+    return record

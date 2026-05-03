@@ -96,8 +96,13 @@ material changes. When the run completes, fails, or is cancelled, Codex must
 stop the heartbeat. The default heartbeat interval is 15 minutes. Dispatch
 Engine does not send chat messages or own the wakeup. If the same technical
 decision remains unanswered across four consecutive heartbeat checks, outer
-Codex may choose a conservative, reversible option, record it in Dispatch
-Engine state, and report all autonomous choices at completion.
+Codex plus the heartbeat owns the eligibility judgment and may choose a
+conservative, reversible option. Dispatch Engine runtime does not decide
+eligibility or pick the option; it only persists and validates the structured
+metadata. Record the choice with `resolve-decision --autonomous-technical`,
+which uses actor `interactive-codex-autonomous`, appends the source-of-truth
+entry to `.dispatch/runs/<run-id>/decisions.jsonl`, and makes a compact
+`status --json` `autonomous_decisions` summary available for final reporting.
 
 Target repo quickstart:
 
@@ -120,6 +125,20 @@ instructions, prepares the explicit plan, keeps the user in the loop, asks for
 decisions, reviews evidence, and polls Codex-facing state surfaces such as
 `status --json`, `events --since`, `alerts --json`, and `tail`. After explicit
 user approval, Codex can use `resolve-decision` to record a selected option.
+After an allowed four-heartbeat autonomous technical fallback, Codex records
+the selected option with the Codex-facing autonomous flags:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" resolve-decision "$TARGET" \
+  --id <decision-id> \
+  --option <option-id> \
+  --autonomous-technical \
+  --unanswered-heartbeats 4 \
+  --autonomous-rationale "<why this is conservative and reversible>" \
+  --validation-expected "<validation command>" \
+  --json
+```
+
 Dispatch Engine's provider CLI coordinator
 performs provider-native dispatch and writes durable `.dispatch/`
 orchestration state, but it is coordinator-only and does not directly implement
@@ -181,6 +200,7 @@ necessary.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
 - Use the runtime for explicit plan import, foreground or detached coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
 - Treat host heartbeat/wakeup automation as the required observation trigger for proactive chat updates after interactive detached launches; Dispatch Engine writes queryable state but does not wake or message the chat directly.
+- Keep autonomous technical decision eligibility in outer interactive Codex and heartbeat guidance. Runtime only validates supplied metadata, appends records to `decisions.jsonl`, emits normal decision events, and surfaces `status --json` summaries.
 - Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `supervisors/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
 - Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
 - Keep runtime prompt templates centralized in `references/prompts/`.

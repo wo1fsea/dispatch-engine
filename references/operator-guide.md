@@ -122,9 +122,13 @@ only material changes. When the run completes, fails, or is cancelled, Codex
 must stop the heartbeat. Dispatch Engine does not send chat messages or own the
 host wakeup. The default heartbeat interval is 15 minutes. If the same pending
 technical decision remains unanswered across four consecutive heartbeat checks,
-outer Codex may select a conservative, reversible option and record it with
-actor `interactive-codex-autonomous`; final reporting must list all such
-autonomous choices.
+outer Codex plus the heartbeat owns the eligibility judgment and may select a
+conservative, reversible option. Record it with `resolve-decision
+--autonomous-technical`; the runtime defaults actor to
+`interactive-codex-autonomous`, validates only the supplied metadata, appends
+the source-of-truth record to `decisions.jsonl`, and exposes compact
+`status --json` autonomous decision summaries. Final reporting must list all
+such autonomous choices.
 
 See `references/heartbeat-observation.md` for the required heartbeat lifecycle,
 recommended intervals, the heartbeat prompt shape, material-change rules, and
@@ -151,7 +155,24 @@ python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
 also use `events --since <event-id> --json`, `alerts --json`, and
 `resolve-decision --id <decision-id> --option <option-id> --json` after
 explicit user approval or an allowed four-heartbeat autonomous technical
-fallback.
+fallback. For the autonomous fallback, use:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" resolve-decision "$TARGET" \
+  --id <decision-id> \
+  --option <option-id> \
+  --autonomous-technical \
+  --unanswered-heartbeats 4 \
+  --autonomous-rationale "<why this is conservative and reversible>" \
+  --validation-expected "<validation command>" \
+  --json
+```
+
+`--autonomous-technical` is a Codex-facing assertion from outer interactive
+Codex, not a runtime eligibility engine. Runtime persists and validates the
+metadata; `decisions.jsonl` remains the durable audit source, while
+`status --json` `autonomous_decisions` is a convenience summary for heartbeat
+checks and final reports.
 
 Runtime state is stored under:
 
@@ -159,6 +180,7 @@ Runtime state is stored under:
 .dispatch/plans/
 .dispatch/runs/<run-id>/run.json
 .dispatch/runs/<run-id>/events.jsonl
+.dispatch/runs/<run-id>/decisions.jsonl
 .dispatch/runs/<run-id>/agents/
 .dispatch/runs/<run-id>/prompts/
 .dispatch/runs/<run-id>/supervisors/

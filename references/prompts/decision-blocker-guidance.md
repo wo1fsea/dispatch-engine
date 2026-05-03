@@ -20,8 +20,9 @@ blocker, or scope-change point.
 - Resolve decision and blocker records only after the operator or interactive
   Codex has made the choice explicit. Interactive Codex may also make a
   conservative autonomous technical choice after four unanswered heartbeat
-  checks, using actor `interactive-codex-autonomous`; coordinators should not
-  invent that fallback themselves.
+  checks, using `resolve-decision --autonomous-technical` so the runtime records
+  actor `interactive-codex-autonomous` plus structured metadata; coordinators
+  should not invent that fallback themselves.
 - Keep runtime use mechanical: append/query records under `.dispatch/`, inspect
   unresolved blockers, and expose status.
 

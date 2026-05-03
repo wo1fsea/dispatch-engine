@@ -91,10 +91,12 @@ completed, failed, or cancelled, report that terminal state and stop this
 heartbeat.
 
 If the same pending technical decision has been reported across four
-consecutive heartbeat checks without user resolution, choose the conservative
-technical option, run resolve-decision with actor interactive-codex-autonomous,
-and continue the run. Record the resolution text so the final report can list
-every autonomous choice.
+consecutive heartbeat checks without user resolution, use interactive Codex
+judgment to confirm that the decision is eligible, choose the conservative
+technical option, run resolve-decision with --autonomous-technical, and
+continue the run. Record rationale and expected validation so the source
+record in decisions.jsonl and the status --json autonomous_decisions summary
+can support the final report.
 ```
 
 If the host supports per-run context, include the run id and last seen event id.
@@ -119,8 +121,9 @@ quiet unless the host requires a visible update.
 ## Autonomous Technical Decisions
 
 After four consecutive heartbeat checks where the same pending technical
-decision remains unresolved by the user, outer Codex may resolve that decision
-without waiting longer, but only when all of these are true:
+decision remains unresolved by the user, outer interactive Codex plus the
+heartbeat owns the eligibility judgment and may resolve that decision without
+waiting longer, but only when all of these are true:
 
 - the decision is technical rather than product, legal, financial, security,
   privacy, deployment, credential, or irreversible data behavior
@@ -133,19 +136,37 @@ Do not autonomously resolve decisions that change product behavior, authorize
 deployment, handle secrets, delete data, broaden business scope, or create
 nontrivial user-facing commitments. Keep those pending and keep asking.
 
-When autonomous resolution is allowed, use the existing decision surface:
+When autonomous resolution is allowed, use the Codex-facing decision surface:
 
 ```bash
 python3 scripts/de.py resolve-decision <repo> \
   --id <decision-id> \
   --option <option-id> \
-  --actor interactive-codex-autonomous \
-  --resolution "Autonomous technical choice after 4 unanswered heartbeat checks: <why this option is conservative/reversible>." \
+  --autonomous-technical \
+  --unanswered-heartbeats 4 \
+  --heartbeat-interval-minutes 15 \
+  --first-seen-heartbeat-id <heartbeat-id> \
+  --last-seen-heartbeat-id <heartbeat-id> \
+  --autonomous-rationale "<why this option is conservative/reversible>" \
+  --validation-expected "<validation command>" \
   --json
 ```
 
-The heartbeat must keep an in-thread list of autonomous choices made during the
-run. The final completion report must include every autonomous decision with:
+With `--autonomous-technical`, the runtime defaults the actor to
+`interactive-codex-autonomous`. Explicit actor overrides must match that value.
+The runtime only validates mechanical metadata: the unanswered heartbeat count,
+required rationale, standard excluded categories, conservative/reversible
+assertions, and validation expectation shape. It does not infer whether the
+choice is truly technical or pick the option.
+
+The source of truth is the append-only record in
+`.dispatch/runs/<run-id>/decisions.jsonl`. `status --json` may expose an
+`autonomous_decisions` count and compact records as a convenience for heartbeat
+and final-report summarization; do not treat the summary as the durable record.
+
+The heartbeat should keep an in-thread list of autonomous choices made during
+the run. The final completion report must include every autonomous decision
+with:
 
 - decision id
 - selected option
@@ -158,14 +179,18 @@ run. The final completion report must include every autonomous decision with:
 Use the Codex-facing CLI surfaces in this order:
 
 1. `status --json`: primary summary, run state, agents, workstreams, pending
-   decisions, protocol violations, and current next actions.
+   decisions, protocol violations, autonomous decision summaries, and current
+   next actions.
 2. `events --since <event-id> --json`: delta reader for material changes since
    the last heartbeat.
 3. `alerts --json`: snapshot of decisions, failures, violations, and other
    user-relevant risks.
 4. `resolve-decision --id <decision-id> --option <option-id> --json`: write
-   surface, only after explicit user approval or an allowed four-heartbeat
-   autonomous technical-decision fallback.
+   surface after explicit user approval.
+5. `resolve-decision --autonomous-technical --unanswered-heartbeats <count>
+   --autonomous-rationale <text> --validation-expected <command> --json`:
+   structured write surface for an allowed four-heartbeat autonomous technical
+   fallback.
 
 ## Fallback Wording
 

@@ -36,3 +36,4 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0013-skill-install-operator-docs`: validated install, quickstart, and troubleshooting documentation path for the first usable version.
 - `rfc-0014-detached-coordinator-supervisor`: validated detached coordinator supervisor so interactive Codex can start `de run --detach` and continue polling status/tail.
 - `rfc-0015-codex-heartbeat-observation`: planned Codex-facing observation contract for detached runs, host heartbeat wakeups, JSON-first control surfaces, and decision/status interpretation.
+- `rfc-0016-autonomous-decision-records`: active structured `.dispatch/` record format for autonomous technical decisions made by outer Codex after four unanswered heartbeat checks.
