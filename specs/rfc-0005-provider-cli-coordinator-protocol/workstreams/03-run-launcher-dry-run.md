@@ -30,8 +30,8 @@ Add an adapter-neutral coordinator launcher surface with dry-run support for Cod
 - Add `de run <repo> --run-id <run-id> --provider codex --dry-run`.
 - Add `de run <repo> --run-id <run-id> --provider claude --dry-run`.
 - Default to latest run when `--run-id` is omitted.
-- Resolve Codex to a `codex exec` command shape with prompt/input/context arguments to be finalized by implementation.
-- Resolve Claude to a `claude -p` command shape with prompt/input/context arguments to be finalized by implementation.
+- Resolve Codex to a `codex exec --sandbox danger-full-access` command shape with prompt/input/context arguments to be finalized by implementation.
+- Resolve Claude to a `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p` command shape with prompt/input/context arguments to be finalized by implementation.
 - Make provider command templates explicit enough for dry-run tests to assert executable, provider, profile, run id, state directory, and prompt source.
 - Generate a coordinator protocol prompt that states coordinator-only behavior and registered implementation-agent requirements.
 - Keep runtime prompt text in `references/prompts/`; runtime code should load and render templates from there.

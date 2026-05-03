@@ -17,8 +17,8 @@ Codex remains the default provider. Claude remains supported explicitly. Live pr
 - Goal: Make `de run <repo>` launch a provider CLI coordinator instead of requiring `--dry-run`.
 - Goal: Keep `--dry-run` available and unchanged for previewing commands.
 - Goal: Default omitted provider selection to Codex.
-- Goal: Support live Codex command shape based on `codex exec`.
-- Goal: Support live Claude command shape based on `claude -p`.
+- Goal: Support live Codex command shape based on `codex exec --sandbox danger-full-access`.
+- Goal: Support live Claude command shape based on `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`.
 - Goal: Register the coordinator agent before launch and update it on completion or failure.
 - Goal: Write coordinator prompt snapshots and process logs under `.dispatch/runs/<run-id>/`.
 - Goal: Pass the recorded coordinator prompt snapshot path to both Codex and Claude, instead of embedding the full prompt inline.

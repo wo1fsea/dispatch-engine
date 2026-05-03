@@ -78,13 +78,13 @@ Responsibilities:
 Codex live command should use the installed Codex CLI exec shape and pass a short instruction that names the recorded prompt snapshot:
 
 ```text
-codex exec --cd <repo-root> "Read and follow the Dispatch Engine coordinator instructions in this file: <prompt-file>"
+codex exec --sandbox danger-full-access --cd <repo-root> "Read and follow the Dispatch Engine coordinator instructions in this file: <prompt-file>"
 ```
 
 Claude live command should use:
 
 ```text
-claude -p "Read and follow the Dispatch Engine coordinator instructions in this file: <prompt-file>"
+claude --dangerously-skip-permissions --permission-mode bypassPermissions -p "Read and follow the Dispatch Engine coordinator instructions in this file: <prompt-file>"
 ```
 
 Tests should create fake `codex` and `claude` executables in a temporary directory and prepend that directory to `PATH`.

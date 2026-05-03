@@ -20,18 +20,28 @@ from .runs import ensure_run_runtime_dirs, resolve_run_dir
 
 COORDINATOR_AGENT_ID = "coordinator-001"
 
-PROVIDER_PROFILES: dict[str, dict[str, str]] = {
+PROVIDER_PROFILES: dict[str, dict[str, Any]] = {
     "codex": {
         "provider": "codex",
         "profile": "codex-exec",
         "executable": "codex",
-        "provider_context": "Codex CLI launched with codex exec.",
+        "provider_context": "Codex CLI launched with codex exec --sandbox danger-full-access.",
+        "coordinator_args": ["exec", "--sandbox", "danger-full-access"],
     },
     "claude": {
         "provider": "claude",
         "profile": "claude-p",
         "executable": "claude",
-        "provider_context": "Claude CLI launched with claude -p.",
+        "provider_context": (
+            "Claude CLI launched with --dangerously-skip-permissions "
+            "--permission-mode bypassPermissions -p."
+        ),
+        "coordinator_args": [
+            "--dangerously-skip-permissions",
+            "--permission-mode",
+            "bypassPermissions",
+            "-p",
+        ],
     },
 }
 
@@ -242,7 +252,7 @@ def launch_run_coordinator(
     )
 
 
-def _provider_profile(provider: str) -> dict[str, str]:
+def _provider_profile(provider: str) -> dict[str, Any]:
     try:
         return PROVIDER_PROFILES[provider]
     except KeyError as exc:
@@ -260,7 +270,7 @@ def _read_run(run_state_dir: Path) -> dict[str, Any]:
 
 
 def _render_argv(
-    profile: dict[str, str],
+    profile: dict[str, Any],
     *,
     repo_root: Path,
     prompt_path: str,
@@ -270,13 +280,13 @@ def _render_argv(
     if provider == "codex":
         return [
             profile["executable"],
-            "exec",
+            *profile["coordinator_args"],
             "--cd",
             str(repo_root),
             instruction,
         ]
     if provider == "claude":
-        return [profile["executable"], "-p", instruction]
+        return [profile["executable"], *profile["coordinator_args"], instruction]
     raise CoordinatorLaunchError(f"malformed provider profile: {provider}")
 
 
@@ -285,7 +295,7 @@ def _provider_instruction(prompt_path: str) -> str:
 
 
 def _live_payload(
-    profile: dict[str, str],
+    profile: dict[str, Any],
     *,
     repo_root: Path,
     run_state_dir: Path,

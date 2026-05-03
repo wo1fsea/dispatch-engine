@@ -41,11 +41,19 @@ python3 scripts/de.py run <repo> --provider claude --dry-run
 ```
 
 Omitting `--provider` defaults to provider `codex`. Provider `codex` renders a
-`codex exec` command shape; provider `claude` renders a `claude -p` command
-shape. Dry-run renders the command and coordinator prompt without launching a
-provider process or writing runtime state. Live launch writes a coordinator
-prompt snapshot, stdout/stderr logs, a coordinator registry record, and
-coordinator lifecycle events under `.dispatch/runs/<run-id>/`.
+`codex exec --sandbox danger-full-access` command shape; provider `claude`
+renders a
+`claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`
+command shape. Dry-run renders the command and coordinator prompt without
+launching a provider process or writing runtime state. Live launch writes a
+coordinator prompt snapshot, stdout/stderr logs, a coordinator registry record,
+and coordinator lifecycle events under `.dispatch/runs/<run-id>/`.
+
+Dispatch Engine intentionally gives the coordinator high provider permissions.
+The coordinator still remains coordinator-only: it must not directly implement
+project-file changes. Worker, reviewer, and validator capability scope is
+decided by the coordinator per assignment through assigned files, allowed write
+roots, validation expectations, and provider-native worker launch options.
 
 ## Agent Registration
 

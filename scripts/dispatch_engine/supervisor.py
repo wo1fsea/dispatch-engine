@@ -234,7 +234,7 @@ def _supervisor_record(
     run_state_dir: Path,
     *,
     repo_root: Path,
-    profile: dict[str, str],
+    profile: dict[str, Any],
     supervisor_pid: int | None,
     supervisor_path: Path,
     supervisor_stdout_path: Path,

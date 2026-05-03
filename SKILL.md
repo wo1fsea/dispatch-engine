@@ -78,8 +78,10 @@ the foreground. `de run <repo> --detach` starts a background supervisor and
 returns immediately so interactive Codex can keep talking with the user while
 `de status` and `de tail` expose progress. When `--provider` is omitted, the
 runtime uses provider `codex` and launches a Codex CLI command shape based on
-`codex exec`. `--provider codex` selects the same provider/profile explicitly.
-`--provider claude` launches a Claude CLI command shape based on `claude -p`.
+`codex exec --sandbox danger-full-access`. `--provider codex` selects the same
+provider/profile explicitly. `--provider claude` launches a Claude CLI command
+shape based on
+`claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`.
 
 `de run <repo> --dry-run` renders the provider command and coordinator prompt
 without starting Codex, Claude, or any other provider process, and without
@@ -156,11 +158,15 @@ files, allowed write roots, validation expectations, and report path.
 
 ## Coordinator And Agent Protocol
 
-Provider CLI processes are coordinators only. A coordinator may plan, dispatch,
-monitor, review, summarize, request decisions, and write Dispatch Engine runtime
-state under `.dispatch/`; it must not directly implement project-file changes.
-Project implementation belongs to registered workers, reviewers, or validators.
-Coordinator owns spawn decisions; Dispatch Engine owns the durable
+Provider CLI processes are coordinators only. Dispatch Engine launches the
+coordinator with high provider permissions so it can spawn agents, install
+dependencies, validate work, and inspect repo state. A coordinator may plan,
+dispatch, monitor, review, summarize, request decisions, and write Dispatch
+Engine runtime state under `.dispatch/`; it must not directly implement
+project-file changes. Project implementation belongs to registered workers,
+reviewers, or validators. Coordinator owns spawn decisions and decides worker
+permission scope through assigned files, allowed write roots, and
+provider-native worker launch options. Dispatch Engine owns the durable
 observability contract. Coordinators may use provider-native spawn mechanisms
 for workers, reviewers, and validators, but every spawned agent must be visible
 through the same `.dispatch/` files.

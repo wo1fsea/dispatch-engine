@@ -267,8 +267,10 @@ unless a compatibility fixture explicitly requires it.
 coordinator from imported run state. `python3 scripts/de.py run <repo>
 --detach` launches a background supervisor and returns immediately. Omitting
 `--provider` defaults to provider `codex`. `--provider codex` launches a
-`codex exec` command shape explicitly. `--provider claude` launches a
-`claude -p` command shape.
+`codex exec --sandbox danger-full-access` command shape explicitly.
+`--provider claude` launches a
+`claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`
+command shape.
 
 Live `de run` writes `prompts/coordinator-001.md`,
 `logs/coordinator-001.stdout.log`, and

@@ -25,7 +25,7 @@ The missing stage is provider CLI coordinator launch and observable subagent sta
 ## Change Gate
 
 - Problem: The next architecture stage needs real coordinator supervision without collapsing provider CLIs into provider-specific implementation logic.
-- Existing path considered: Let interactive Codex manually launch `codex exec` or `claude -p` and paste results back into chat.
+- Existing path considered: Let interactive Codex manually launch `codex exec --sandbox danger-full-access` or `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p` and paste results back into chat.
 - Why existing path is insufficient: Manual launch loses durable coordinator state, subagent counts, heartbeats, events, protocol violations, and resumable status.
 - Smallest new surface: Add an agent registry protocol, event vocabulary, status observability, explicit Codex/Claude provider command templates, and `de run --dry-run` coordinator launcher shape before enabling live process supervision.
 - What will be deleted or replaced: No runtime code is deleted in this spec. Later implementation may replace ad hoc status fields with structured agent counts.
@@ -246,8 +246,8 @@ git diff --check
 Manual checks:
 
 - Omitted provider renders the same provider/profile as `--provider codex`.
-- Claude dry-run renders a `claude -p` command shape without launching a process.
-- Codex dry-run renders a `codex exec` command shape without launching a process.
+- Claude dry-run renders a `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p` command shape without launching a process.
+- Codex dry-run renders a `codex exec --sandbox danger-full-access` command shape without launching a process.
 - The dry-run launcher does not modify project files.
 - Coordinator prompt states the coordinator-only rule.
 - New durable docs include metadata.

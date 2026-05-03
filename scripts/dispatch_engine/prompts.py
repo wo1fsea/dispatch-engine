@@ -20,7 +20,7 @@ def render_coordinator_prompt(
     *,
     repo_root: Path,
     run_state_dir: Path,
-    profile: dict[str, str],
+    profile: dict[str, Any],
 ) -> str:
     """Render the provider coordinator protocol prompt from the central template."""
 

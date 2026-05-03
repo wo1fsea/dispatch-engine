@@ -8,7 +8,7 @@ doc_type: spec
 
 ## Summary
 
-Dispatch Engine should be able to launch and supervise provider CLI coordinators such as `codex exec` and `claude -p` while preserving the architecture boundary from `rfc-0004-explicit-plan-orchestrator-boundary`.
+Dispatch Engine should be able to launch and supervise provider CLI coordinators such as `codex exec --sandbox danger-full-access` and `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p` while preserving the architecture boundary from `rfc-0004-explicit-plan-orchestrator-boundary`.
 
 The provider CLI process is a coordinator agent, not an implementation shortcut. It may plan, dispatch, monitor, review, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`. It must not directly edit project files to implement the requested change. Project implementation must happen through registered worker, reviewer, or validator agents whose activity is visible in Dispatch Engine state, status output, and events.
 
@@ -35,8 +35,8 @@ Codex is the default coordinator provider. When the operator runs `de run <repo>
 
 1. Dispatch Engine launches a provider CLI coordinator from imported run state, not from repository inspection or heuristic planning.
 2. `de run <repo> --run-id <id>` defaults to provider `codex`.
-3. `de run <repo> --run-id <id> --provider codex` uses a Codex CLI coordinator command shape based on `codex exec`, with prompt, input, context, and state arguments finalized by implementation.
-4. `de run <repo> --run-id <id> --provider claude` uses a Claude CLI coordinator command shape based on `claude -p`, with prompt, input, context, and state arguments finalized by implementation.
+3. `de run <repo> --run-id <id> --provider codex` uses a Codex CLI coordinator command shape based on `codex exec --sandbox danger-full-access`, with prompt, input, context, and state arguments finalized by implementation.
+4. `de run <repo> --run-id <id> --provider claude` uses a Claude CLI coordinator command shape based on `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`, with prompt, input, context, and state arguments finalized by implementation.
 5. Provider command templates or config are explicit enough for dry-run tests to assert the selected executable, provider, prompt source, run id, and state path without launching a process.
 6. A coordinator process is registered in `.dispatch/runs/<run-id>/agents/` before it receives work.
 7. The coordinator role is `coordinator`; implementation roles are `worker`, `reviewer`, and `validator`.
@@ -80,4 +80,3 @@ Codex is the default coordinator provider. When the operator runs `de run <repo>
 ## Open Questions
 
 None blocking. This spec is ready to implement with an initial dry-run launcher for both Codex and Claude, followed by durable state protocol and real process supervision.
-

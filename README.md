@@ -90,9 +90,10 @@ python3 scripts/de.py tail <repo>
 imported run. `de run <repo> --detach` starts a background supervisor and
 returns immediately, which is the preferred interactive Codex operation mode.
 Omitting `--provider` defaults to provider `codex`, which uses a `codex exec`
-command shape; `--provider codex` selects that same provider explicitly.
-`--provider claude` uses a Claude coordinator command shape based on
-`claude -p`.
+command shape with `--sandbox danger-full-access`; `--provider codex` selects
+that same provider explicitly. `--provider claude` uses a Claude coordinator
+command shape based on
+`claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`.
 
 Detached runs keep the chat responsive, but they do not automatically wake the
 foreground Codex chat. After every successful interactive `run --detach`,
@@ -169,12 +170,16 @@ The provider process receives a short instruction pointing to the recorded
 prompt snapshot path; the full coordinator prompt is not embedded directly in
 the launch command.
 
-Provider CLI coordinators are coordinator-only. They may plan, dispatch,
-monitor, summarize, request decisions, and write Dispatch Engine runtime state,
-but they must not directly implement project-file changes. Workers, reviewers,
-and validators must be registered in `.dispatch/runs/<run-id>/agents/` before
-their implementation, review, or validation output is accepted.
-Coordinator owns spawn decisions; Dispatch Engine owns the durable
+Provider CLI coordinators are coordinator-only. Dispatch Engine launches the
+coordinator with high provider permissions so it can spawn agents, install
+dependencies, validate work, and inspect repo state. Coordinators may plan,
+dispatch, monitor, summarize, request decisions, and write Dispatch Engine
+runtime state, but they must not directly implement project-file changes.
+Workers, reviewers, and validators must be registered in
+`.dispatch/runs/<run-id>/agents/` before their implementation, review, or
+validation output is accepted. Coordinator owns spawn decisions and decides
+worker permission scope through assigned files, allowed write roots, and
+provider-native worker launch options; Dispatch Engine owns the durable
 observability contract for every spawned agent.
 
 Runtime prompt templates live under `references/prompts/`. Runtime modules

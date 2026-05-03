@@ -41,6 +41,8 @@ class RunDryRunTests(unittest.TestCase):
                 [
                     "codex",
                     "exec",
+                    "--sandbox",
+                    "danger-full-access",
                     "--cd",
                     str(repo.resolve()),
                     "Read and follow the Dispatch Engine coordinator instructions in this file: "
@@ -88,13 +90,27 @@ class RunDryRunTests(unittest.TestCase):
             claude = render_run_dry_run(repo, run_id=run["run_id"], provider="claude")
 
             self.assertEqual(codex["argv"][0:2], ["codex", "exec"])
+            self.assertEqual(codex["argv"][2:4], ["--sandbox", "danger-full-access"])
             self.assertIn("<dry-run-generated-coordinator-prompt>", codex["argv"][-1])
             self.assertEqual(codex["profile"], "codex-exec")
-            self.assertEqual(claude["argv"][0:2], ["claude", "-p"])
+            self.assertEqual(
+                claude["argv"][0:5],
+                [
+                    "claude",
+                    "--dangerously-skip-permissions",
+                    "--permission-mode",
+                    "bypassPermissions",
+                    "-p",
+                ],
+            )
             self.assertEqual(claude["profile"], "claude-p")
-            self.assertIn("<dry-run-generated-coordinator-prompt>", claude["argv"][2])
-            self.assertNotEqual(claude["argv"][2], claude["prompt_text"])
-            self.assertIn("Provider context: Claude CLI launched with claude -p.", claude["prompt_text"])
+            self.assertIn("<dry-run-generated-coordinator-prompt>", claude["argv"][5])
+            self.assertNotEqual(claude["argv"][5], claude["prompt_text"])
+            self.assertIn(
+                "Provider context: Claude CLI launched with --dangerously-skip-permissions "
+                "--permission-mode bypassPermissions -p.",
+                claude["prompt_text"],
+            )
 
     def test_unsupported_provider_and_missing_run_fail_clearly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

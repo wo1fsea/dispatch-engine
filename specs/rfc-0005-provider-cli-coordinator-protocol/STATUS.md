@@ -14,7 +14,7 @@ updated: 2026-05-02
 
 ## Summary
 
-Ready for review. Workstreams 01 through 04 are validated: Dispatch Engine now has durable agent registry helpers, status observability for registered agents and violations, dry-run provider coordinator rendering for default Codex, explicit Codex, and explicit Claude, and updated operator/reference documentation. Codex is the default provider when `--provider` is omitted, Codex renders `codex exec`, Claude renders `claude -p`, and dry-run renders command/prompt details without launching a provider process.
+Ready for review. Workstreams 01 through 04 are validated: Dispatch Engine now has durable agent registry helpers, status observability for registered agents and violations, dry-run provider coordinator rendering for default Codex, explicit Codex, and explicit Claude, and updated operator/reference documentation. Codex is the default provider when `--provider` is omitted, Codex renders `codex exec --sandbox danger-full-access`, Claude renders `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`, and dry-run renders command/prompt details without launching a provider process.
 
 ## Workstreams
 

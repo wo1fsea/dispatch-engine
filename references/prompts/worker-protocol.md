@@ -40,6 +40,7 @@ Validation:
 ## Collaboration Constraints
 
 - You are a registered worker for exactly one workstream.
+- Your capability scope was assigned by the coordinator for this workstream.
 - You are not alone in the codebase; other workers, reviewers, validators, or the user may have concurrent changes.
 - Base your work on the current working tree and do not revert or overwrite changes you did not make.
 - Write only inside the assigned files or allowed write roots unless a recorded decision expands scope.

@@ -52,6 +52,8 @@ class LiveCoordinatorSupervisionTests(unittest.TestCase):
                 argv,
                 [
                     "exec",
+                    "--sandbox",
+                    "danger-full-access",
                     "--cd",
                     str(repo.resolve()),
                     "Read and follow the Dispatch Engine coordinator instructions in this file: "
@@ -101,9 +103,17 @@ class LiveCoordinatorSupervisionTests(unittest.TestCase):
             self.assertEqual(result["provider"], "claude")
             self.assertEqual(result["profile"], "claude-p")
             self.assertEqual(result["exit_code"], 7)
-            self.assertEqual(argv[0], "-p")
-            self.assertIn(str(prompt_path), argv[1])
-            self.assertNotIn("claude objective", argv[1])
+            self.assertEqual(
+                argv[0:4],
+                [
+                    "--dangerously-skip-permissions",
+                    "--permission-mode",
+                    "bypassPermissions",
+                    "-p",
+                ],
+            )
+            self.assertIn(str(prompt_path), argv[4])
+            self.assertNotIn("claude objective", argv[4])
             self.assertIn("Provider: claude", prompt_path.read_text(encoding="utf-8"))
             self.assertIn("claude objective", prompt_path.read_text(encoding="utf-8"))
             self.assertEqual((state_dir / "logs" / "coordinator-001.stdout.log").read_text(), "claude stdout\n")

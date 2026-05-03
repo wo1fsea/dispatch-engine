@@ -117,7 +117,7 @@ python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 ```
 
-Omitting `--provider` defaults to provider `codex`, using a `codex exec` command shape. `--provider codex` selects the same provider explicitly. `--provider claude` is optional and uses a Claude CLI command shape based on `claude -p`.
+Omitting `--provider` defaults to provider `codex`, using a `codex exec --sandbox danger-full-access` command shape. `--provider codex` selects the same provider explicitly. `--provider claude` is optional and uses a Claude CLI command shape based on `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`.
 
 Detached runs do not automatically wake the foreground Codex chat. After every
 successful interactive `run --detach`, interactive Codex must create a

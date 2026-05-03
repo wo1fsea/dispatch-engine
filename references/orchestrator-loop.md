@@ -56,7 +56,9 @@ python3 scripts/de.py run <repo> --provider claude --dry-run
 ```
 
 If `--provider` is omitted, Dispatch Engine uses provider `codex`. Provider
-`codex` uses a `codex exec` command shape. Provider `claude` uses a `claude -p`
+`codex` uses a `codex exec --sandbox danger-full-access` command shape.
+Provider `claude` uses a
+`claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`
 command shape. Dry-run renders the selected command, run id, state directory,
 and coordinator prompt marker or preview; it does not launch a provider process
 or write runtime state.
