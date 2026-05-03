@@ -8,6 +8,11 @@ doc_type: runbook
 
 Use this guide when installing Dispatch Engine as a Codex skill and operating it against a target repository.
 
+Project repository: `https://github.com/wo1fsea/dispatch-engine`.
+Framework, skill, runtime, protocol, heartbeat, prompt, status, or process
+blocker issues belong in `https://github.com/wo1fsea/dispatch-engine/issues`.
+Use `references/issue-reporting-protocol.md` to file or draft actionable issues.
+
 ## Install Shape
 
 Dispatch Engine is distributed as the skill directory itself. The repository root contains `SKILL.md`, reference guidance, prompt templates, and the bundled runtime under `scripts/`. There is no separate package installer for the current usable version.
@@ -19,7 +24,7 @@ Clone install:
 ```bash
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 mkdir -p "$CODEX_HOME/skills"
-git clone <dispatch-engine-repo-url> "$CODEX_HOME/skills/dispatch-engine"
+git clone https://github.com/wo1fsea/dispatch-engine.git "$CODEX_HOME/skills/dispatch-engine"
 cd "$CODEX_HOME/skills/dispatch-engine"
 python3 scripts/de.py --help
 python3 scripts/de.py version
@@ -221,6 +226,7 @@ Accepted project changes belong in normal source, test, docs, spec, or configura
 - Progress looks stale: check `status`, then `tail`, then inspect `.dispatch/runs/<run-id>/logs/` and `.dispatch/runs/<run-id>/events.jsonl`.
 - Host wakeups are unavailable: tell the user, "This host cannot create the required Dispatch Engine heartbeat for this thread. The detached run would still write queryable state under `.dispatch/`, but this chat would not be proactively supervised. Please confirm whether to continue without proactive observation or switch to a foreground/debug run."
 - A coordinator edited project files directly: treat that as a protocol violation. Reassign implementation to registered workers/reviewers/validators and keep coordinator output as orchestration evidence only.
+- Dispatch Engine itself blocks or misguides the workflow: follow `references/issue-reporting-protocol.md` and proactively file or prepare a GitHub issue against `https://github.com/wo1fsea/dispatch-engine/issues`.
 
 ## Validation Commands
 

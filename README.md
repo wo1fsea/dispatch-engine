@@ -10,6 +10,10 @@ Repo-native agent dispatch, with adult supervision.
 
 Dispatch Engine is a runtime-backed Codex skill. The repository root is the installable skill directory, and the local runtime is bundled under `scripts/` so the whole project can be copied or cloned into a Codex skills directory.
 
+Project repository: [wo1fsea/dispatch-engine](https://github.com/wo1fsea/dispatch-engine).
+Report framework, skill, runtime, protocol, heartbeat, prompt, status, or
+process blocker issues to [Dispatch Engine issues](https://github.com/wo1fsea/dispatch-engine/issues).
+
 Interactive Codex reads a repository's own planning conventions, turns work into an explicit dispatch plan, reviews results, and keeps the user in the loop. The runtime imports that explicit plan, stores durable `.dispatch/` state, exposes status/tail readers, and can launch a foreground or detached provider CLI coordinator for the imported run.
 
 The `de` CLI is a Codex-facing machine interface, not the human user interface.
@@ -28,7 +32,7 @@ Clone or copy the whole root into a Codex skills directory:
 ```bash
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 mkdir -p "$CODEX_HOME/skills"
-git clone <dispatch-engine-repo-url> "$CODEX_HOME/skills/dispatch-engine"
+git clone https://github.com/wo1fsea/dispatch-engine.git "$CODEX_HOME/skills/dispatch-engine"
 cd "$CODEX_HOME/skills/dispatch-engine"
 python3 scripts/de.py --help
 python3 scripts/de.py version
@@ -46,7 +50,10 @@ rsync -a --delete --exclude '.git/' --exclude '.dispatch/' "$SOURCE/" "$CODEX_HO
 See [`references/operator-guide.md`](references/operator-guide.md) for the full
 install, quickstart, status, and troubleshooting runbook. See
 [`references/heartbeat-observation.md`](references/heartbeat-observation.md)
-for detached-run heartbeat guidance.
+for detached-run heartbeat guidance. See
+[`references/issue-reporting-protocol.md`](references/issue-reporting-protocol.md)
+for proactive GitHub issue reporting when Dispatch Engine itself blocks or
+misguides a workflow.
 
 ## Skill Layout
 

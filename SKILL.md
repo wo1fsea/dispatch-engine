@@ -9,13 +9,20 @@ Use this skill to operate the bundled Dispatch Engine runtime from a repository 
 
 Dispatch Engine is a skill-first project: the skill root contains the operator instructions, the runnable local CLI, runtime modules, and reference protocols. A user should be able to clone or copy this directory into their Codex skills directory and have the runtime available through the bundled scripts.
 
+Project GitHub repository: `https://github.com/wo1fsea/dispatch-engine`.
+Framework, skill, runtime, protocol, heartbeat, prompt, status, or process
+blocker issues encountered while using this skill or `de` must be proactively
+reported to `https://github.com/wo1fsea/dispatch-engine/issues`. Use
+`references/issue-reporting-protocol.md` before filing or drafting the issue.
+
 The bundled `de` CLI is a Codex-facing machine interface, not the human user
 interface. Humans talk to interactive Codex; interactive Codex calls `de`,
 reads JSON/file state, and explains progress or decisions in conversation.
 
 For install, target repo quickstart, progress watching, git ignore guidance,
 and troubleshooting, read `references/operator-guide.md`. For detached-run
-heartbeat guidance, read `references/heartbeat-observation.md`.
+heartbeat guidance, read `references/heartbeat-observation.md`. For proactive
+GitHub issue reporting, read `references/issue-reporting-protocol.md`.
 
 ## Boundary Rule
 
@@ -141,6 +148,11 @@ files, allowed write roots, validation expectations, and report path.
     to `.dispatch/runs/<run-id>/decisions.jsonl`, and exposes a convenience
     `status --json` `autonomous_decisions` summary.
 13. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
+14. When this skill, `de`, the coordinator protocol, heartbeat guidance,
+    status/alert/event surfaces, prompt templates, or any Dispatch
+    Engine-owned process creates a framework problem or process blocker, follow
+    `references/issue-reporting-protocol.md` and proactively file or prepare a
+    GitHub issue against `https://github.com/wo1fsea/dispatch-engine`.
 
 ## Coordinator And Agent Protocol
 
@@ -205,6 +217,7 @@ repo.
 - Read `references/operator-guide.md` when installing the skill or operating it against a target repo.
 - Read `references/operator-flow.md` when supervising a run from interactive Codex.
 - Read `references/heartbeat-observation.md` when configuring or explaining detached-run heartbeat observation.
+- Read `references/issue-reporting-protocol.md` when any Dispatch Engine framework, skill, runtime, protocol, prompt, status, heartbeat, or process blocker issue appears during use.
 - Read `specs/rfc-0015-codex-heartbeat-observation/` when changing detached-run observation, heartbeat wakeup guidance, Codex-facing status/actions, or decision-resolution surfaces.
 - Read `specs/rfc-0016-autonomous-decision-records/` when changing autonomous technical-decision records, `resolve-decision --autonomous-technical`, or `status --json` autonomous decision summaries.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.

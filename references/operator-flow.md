@@ -13,6 +13,8 @@ usage, `.dispatch/` git guidance, and troubleshooting, see
 `references/operator-guide.md`.
 For heartbeat wakeup prompts, interval guidance, material-change reporting, and
 fallback wording, see `references/heartbeat-observation.md`.
+For framework, skill, runtime, protocol, prompt, status, heartbeat, or process
+blocker reporting, see `references/issue-reporting-protocol.md`.
 
 ## Boundary
 
@@ -48,6 +50,10 @@ progress or asks for decisions.
     invariants, and exposes a convenience `status --json`
     `autonomous_decisions` summary.
 14. Report validation evidence, residual risk, and all autonomous technical choices made during the run.
+15. If Dispatch Engine itself creates a framework problem or process blocker,
+    proactively file or prepare a GitHub issue against
+    `https://github.com/wo1fsea/dispatch-engine/issues` using
+    `references/issue-reporting-protocol.md`.
 
 ## Runtime Loop
 

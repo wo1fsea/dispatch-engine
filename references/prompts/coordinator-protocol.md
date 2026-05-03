@@ -35,6 +35,12 @@ Objective: {objective}
 - Request a decision before expanding write scope or continuing blocked work.
 - Write coordinator reports to `{report_path}`.
 - Coordinator owns spawn decisions; Dispatch Engine owns the durable observability contract.
+- If the Dispatch Engine framework, skill guidance, runtime command, protocol,
+  prompt, status/alert/event surface, heartbeat guidance, or any DE-owned
+  process blocks or misguides this run, record the blocker or protocol
+  violation in `.dispatch/` and file or draft a GitHub issue for
+  `https://github.com/wo1fsea/dispatch-engine/issues` following
+  `references/issue-reporting-protocol.md`.
 
 ## Spawned Agent Contract
 
