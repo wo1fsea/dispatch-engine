@@ -38,3 +38,6 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0015-codex-heartbeat-observation`: planned Codex-facing observation contract for detached runs, host heartbeat wakeups, JSON-first control surfaces, and decision/status interpretation.
 - `rfc-0016-autonomous-decision-records`: active structured `.dispatch/` record format for autonomous technical decisions made by outer Codex after four unanswered heartbeat checks.
 - `rfc-0017-coordinator-permission-baseline`: active high-permission coordinator launch baseline for Codex and Claude, with worker permission scope delegated to the coordinator.
+- `rfc-0018-agent-capability-profiles`: planned explicit capability profile contract for workstreams and agents, covering non-file permissions, escalation decisions, and status/report auditing.
+- `rfc-0019-validator-report-schema-diagnostics`: planned validator report schema diagnostics and regression fixture for useful dogfood evidence reported as malformed.
+- `rfc-0020-run-cancel-control`: planned Codex-facing cancellation control for detached runs, including `de cancel`, `de stop`, durable cancelled state, events, alerts, and heartbeat shutdown guidance.
