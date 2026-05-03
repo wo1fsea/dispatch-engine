@@ -48,6 +48,9 @@ Review report available so far:
 - Record what was run, what it proved, and where durable output or artifacts live.
 - If validation cannot be run, use `status: "skipped"` and give a specific `not_run_reason`.
 - Do not use `status: "completed"` in validator reports. Use `passed`, `failed`, `blocked`, or `skipped`.
+- Follow the canonical schema below exactly. `artifacts` is always an array,
+  `not_run_reason` is always a string, and non-skipped reports still need
+  aggregate `command`, `output_summary`, and at least one artifact path.
 - Do not infer acceptance from passing commands. Acceptance judgment belongs to review/coordination guidance.
 - Runtime validation only checks report shape, allowed status values, evidence presence, and identity consistency. Schema diagnostics name exact repair fields.
 - Use `blocked` when validation needs a decision, scope change, dependency override, or operator interpretation.

@@ -23,9 +23,15 @@ from .events import EventCursorError, read_events, read_events_with_ids
 from .runs import resolve_run_dir
 from .supervisor import read_supervisors
 
-TERMINAL_AGENT_STATUSES = frozenset({"completed", "failed", "cancelled"})
+TERMINAL_AGENT_STATUSES = frozenset({"completed", "completed_with_concerns", "failed", "cancelled"})
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 MATERIAL_STATUSES = frozenset({"completed", "failed", "blocked", "cancelled"})
+RUNNING_AGENT_STATUSES = frozenset({"registered", "running"})
+STDOUT_DECISION_PATTERNS = (
+    "i need your decision",
+    "decision before proceeding",
+    "approve expanding",
+)
 
 
 def latest_run_summary(target: Path) -> dict:
@@ -51,23 +57,28 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
     data = json.loads(run_file.read_text(encoding="utf-8"))
     workstreams = data.get("workstreams", [])
     counts = dict(Counter(item.get("status", "unknown") for item in workstreams))
-    pending_decision_records = list_pending_decisions(selected)
-    if not pending_decision_records and not (selected / "decisions.jsonl").exists():
-        pending_decision_records = [
-            item for item in data.get("decisions", []) if item.get("status", "pending") == "pending"
-        ]
+    pending_decision_records = _pending_decision_records(selected, data)
     pending_decisions = len(pending_decision_records)
     unresolved_blockers = list_unresolved_blockers(selected)
     decision_blocker_validation = validate_decision_blocker_state(selected)
     autonomous_decisions = _autonomous_decision_summary(selected)
     events = read_events(selected / "events.jsonl")
     agent_summary = _agent_observability(selected, workstreams, events)
+    lifecycle_diagnostics = _lifecycle_diagnostics(
+        selected,
+        run=data,
+        agents=agent_summary["agents"],
+        supervisors=agent_summary["supervisors"],
+        events=events,
+        pending_decisions=pending_decision_records,
+    )
     next_actions = _next_actions(
         run_status=data.get("status"),
         pending_decision_records=pending_decision_records,
         unresolved_blockers=unresolved_blockers,
         protocol_violations=agent_summary["protocol_violations"],
         agents=agent_summary["agents"],
+        lifecycle_diagnostics=lifecycle_diagnostics,
     )
     summary = (
         f"Run {data.get('run_id')} [{data.get('status', 'unknown')}] "
@@ -88,6 +99,7 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
         "unresolved_blockers": len(unresolved_blockers),
         "decision_blocker_validation": decision_blocker_validation,
         "autonomous_decisions": autonomous_decisions,
+        "lifecycle_diagnostics": lifecycle_diagnostics,
         "next_actions": next_actions,
         "state_dir": str(selected),
         "last_event_at": events[-1].get("ts") if events else None,
@@ -169,13 +181,26 @@ def run_alerts(target: Path, run_id: str | None = None) -> dict:
     data = json.loads(run_file.read_text(encoding="utf-8"))
     events = read_events(selected / "events.jsonl")
     agents = list_agents(selected)
+    pending_decisions = _pending_decision_records(selected, data)
+    unresolved_blockers = list_unresolved_blockers(selected)
+    protocol_violations = _protocol_violations(selected, events)
+    supervisors = read_supervisors(selected)
+    lifecycle_diagnostics = _lifecycle_diagnostics(
+        selected,
+        run=data,
+        agents=agents,
+        supervisors=supervisors,
+        events=events,
+        pending_decisions=pending_decisions,
+    )
     alerts = _material_alerts(
         run_id=selected.name,
         run=data,
-        pending_decisions=list_pending_decisions(selected),
-        unresolved_blockers=list_unresolved_blockers(selected),
-        protocol_violations=_protocol_violations(selected, events),
+        pending_decisions=pending_decisions,
+        unresolved_blockers=unresolved_blockers,
+        protocol_violations=protocol_violations,
         agents=agents,
+        lifecycle_diagnostics=lifecycle_diagnostics,
     )
     return {
         "kind": "alerts",
@@ -239,6 +264,15 @@ def _agent_observability(
     }
 
 
+def _pending_decision_records(run_state_dir: Path, run: dict[str, Any]) -> list[dict[str, Any]]:
+    records = list_pending_decisions(run_state_dir)
+    if not records and not (run_state_dir / "decisions.jsonl").exists():
+        records = [
+            item for item in run.get("decisions", []) if item.get("status", "pending") == "pending"
+        ]
+    return records
+
+
 def _autonomous_decision_summary(run_state_dir: Path) -> dict[str, Any]:
     records = []
     decisions = sorted(
@@ -268,6 +302,7 @@ def _next_actions(
     unresolved_blockers: list[dict[str, Any]],
     protocol_violations: dict[str, Any],
     agents: list[dict[str, Any]],
+    lifecycle_diagnostics: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     if run_status in TERMINAL_RUN_STATUSES:
         return []
@@ -317,6 +352,25 @@ def _next_actions(
                 "type": "inspect_failed_agents",
                 "count": len(failed_agents),
                 "agent_ids": failed_agents,
+            }
+        )
+
+    lifecycle_actions = [
+        diagnostic
+        for diagnostic in lifecycle_diagnostics
+        if diagnostic.get("type") in {
+            "missing_agent_launch_evidence",
+            "orphaned_running_agent",
+            "stale_detached_supervisor",
+            "stdout_only_decision_request",
+        }
+    ]
+    if lifecycle_actions:
+        actions.append(
+            {
+                "type": "inspect_lifecycle_diagnostics",
+                "count": len(lifecycle_actions),
+                "diagnostic_types": sorted({str(item.get("type")) for item in lifecycle_actions}),
             }
         )
 
@@ -398,6 +452,205 @@ def _heartbeat_summary(agents: list[dict[str, Any]]) -> dict[str, int]:
         "with_heartbeat": with_heartbeat,
         "missing_heartbeat": len(agents) - with_heartbeat,
     }
+
+
+def _lifecycle_diagnostics(
+    run_state_dir: Path,
+    *,
+    run: dict[str, Any],
+    agents: list[dict[str, Any]],
+    supervisors: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    pending_decisions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    diagnostics.extend(_stale_supervisor_diagnostics(supervisors))
+    diagnostics.extend(_missing_launch_evidence_diagnostics(run_state_dir, agents))
+    diagnostics.extend(_orphaned_running_agent_diagnostics(run, agents, supervisors))
+    stdout_diagnostic = _stdout_only_decision_diagnostic(
+        run_state_dir,
+        agents=agents,
+        events=events,
+        pending_decisions=pending_decisions,
+    )
+    if stdout_diagnostic is not None:
+        diagnostics.append(stdout_diagnostic)
+    return sorted(diagnostics, key=lambda item: (str(item.get("type")), str(item.get("agent_id", ""))))
+
+
+def _missing_launch_evidence_diagnostics(
+    run_state_dir: Path,
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    diagnostics = []
+    for agent in agents:
+        if agent.get("role") not in {"worker", "reviewer", "validator"}:
+            continue
+        if agent.get("status") not in RUNNING_AGENT_STATUSES:
+            continue
+        if _has_launch_evidence(run_state_dir, agent):
+            continue
+        diagnostics.append(
+            {
+                "type": "missing_agent_launch_evidence",
+                "severity": "material",
+                "agent_id": agent.get("agent_id"),
+                "role": agent.get("role"),
+                "status": agent.get("status"),
+                "workstream": agent.get("workstream"),
+                "summary": (
+                    f"{agent.get('role')} {agent.get('agent_id')} is {agent.get('status')} "
+                    "but has no provider-native id, pid, stdout path, or stderr path."
+                ),
+            }
+        )
+    return diagnostics
+
+
+def _has_launch_evidence(run_state_dir: Path, agent: dict[str, Any]) -> bool:
+    provider_native_agent_id = agent.get("provider_native_agent_id")
+    if isinstance(provider_native_agent_id, str) and provider_native_agent_id.strip():
+        return True
+    pid = agent.get("pid")
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        return True
+    for field in ("stdout_path", "stderr_path"):
+        resolved = _resolve_run_path(run_state_dir, agent.get(field))
+        if resolved is not None and resolved.exists():
+            return True
+    return False
+
+
+def _stale_supervisor_diagnostics(supervisors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    diagnostics = []
+    for supervisor in supervisors:
+        if supervisor.get("status") != "stale":
+            continue
+        pid = supervisor.get("supervisor_pid")
+        reason = supervisor.get("stale_reason") or "supervisor_not_alive"
+        diagnostics.append(
+            {
+                "type": "stale_detached_supervisor",
+                "severity": "material",
+                "agent_id": supervisor.get("agent_id"),
+                "supervisor_pid": pid,
+                "reason": reason,
+                "summary": f"Detached supervisor for {supervisor.get('agent_id')} is stale ({reason}).",
+            }
+        )
+    return diagnostics
+
+
+def _orphaned_running_agent_diagnostics(
+    run: dict[str, Any],
+    agents: list[dict[str, Any]],
+    supervisors: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    coordinator = _first_coordinator(agents)
+    coordinator_terminal = bool(coordinator and coordinator.get("status") in TERMINAL_AGENT_STATUSES)
+    run_terminal = run.get("status") in TERMINAL_RUN_STATUSES
+    if not (coordinator_terminal or run_terminal):
+        return []
+    if _has_active_supervisor(supervisors):
+        return []
+
+    diagnostics = []
+    for agent in agents:
+        if agent.get("role") == "coordinator":
+            continue
+        if agent.get("status") not in RUNNING_AGENT_STATUSES:
+            continue
+        diagnostic = {
+            "type": "orphaned_running_agent",
+            "severity": "material",
+            "agent_id": agent.get("agent_id"),
+            "role": agent.get("role"),
+            "status": agent.get("status"),
+            "summary": (
+                f"{agent.get('role')} {agent.get('agent_id')} is still {agent.get('status')} "
+                "after the coordinator/run reached a terminal state."
+            ),
+        }
+        if agent.get("workstream"):
+            diagnostic["workstream"] = agent["workstream"]
+        diagnostics.append(diagnostic)
+    return diagnostics
+
+
+def _has_active_supervisor(supervisors: list[dict[str, Any]]) -> bool:
+    return any(
+        supervisor.get("status") == "running" and supervisor.get("process_alive") is True
+        for supervisor in supervisors
+    )
+
+
+def _stdout_only_decision_diagnostic(
+    run_state_dir: Path,
+    *,
+    agents: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    pending_decisions: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if pending_decisions or any(event.get("type") == "decision.requested" for event in events):
+        return None
+
+    coordinator = _first_coordinator(agents)
+    stdout_path = _coordinator_stdout_path(run_state_dir, coordinator)
+    if stdout_path is None or not stdout_path.exists():
+        return None
+
+    matched_text = _stdout_decision_match(stdout_path)
+    if matched_text is None:
+        return None
+    return {
+        "type": "stdout_only_decision_request",
+        "severity": "material",
+        "agent_id": coordinator.get("agent_id") if coordinator else "coordinator-001",
+        "stdout_path": _run_relative_existing_path(run_state_dir, stdout_path),
+        "matched_text": matched_text,
+        "summary": "Coordinator stdout appears to request a user decision, but no pending decision record or decision.requested event exists.",
+    }
+
+
+def _coordinator_stdout_path(run_state_dir: Path, coordinator: dict[str, Any] | None) -> Path | None:
+    if coordinator:
+        stdout_path = coordinator.get("stdout_path")
+        resolved = _resolve_run_path(run_state_dir, stdout_path)
+        if resolved is not None:
+            return resolved
+    default_path = run_state_dir / "logs" / "coordinator-001.stdout.log"
+    return default_path
+
+
+def _resolve_run_path(run_state_dir: Path, value: Any) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    prefix = f".dispatch/runs/{run_state_dir.name}/"
+    if value.startswith(prefix):
+        return run_state_dir / value.removeprefix(prefix)
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return run_state_dir / path
+
+
+def _run_relative_existing_path(run_state_dir: Path, path: Path) -> str:
+    try:
+        return f".dispatch/runs/{run_state_dir.name}/{path.relative_to(run_state_dir)}"
+    except ValueError:
+        return str(path)
+
+
+def _stdout_decision_match(stdout_path: Path) -> str | None:
+    try:
+        text = stdout_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        normalized = line.lower()
+        if any(pattern in normalized for pattern in STDOUT_DECISION_PATTERNS):
+            return line.strip()[:240]
+    return None
 
 
 def _capability_profile_summary(
@@ -566,6 +819,7 @@ def _material_alerts(
     unresolved_blockers: list[dict[str, Any]],
     protocol_violations: list[dict[str, Any]],
     agents: list[dict[str, Any]],
+    lifecycle_diagnostics: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     for decision in sorted(pending_decisions, key=lambda item: _record_id(item, "decision_id")):
@@ -619,6 +873,27 @@ def _material_alerts(
             alert["workstream"] = agent["workstream"]
         if agent.get("failure_reason"):
             alert["reason"] = agent["failure_reason"]
+        alerts.append(alert)
+
+    for diagnostic in lifecycle_diagnostics:
+        alert = {
+            "type": diagnostic.get("type", "lifecycle_diagnostic"),
+            "run_id": run_id,
+            "severity": diagnostic.get("severity", "material"),
+            "summary": diagnostic.get("summary", ""),
+        }
+        for field in (
+            "agent_id",
+            "role",
+            "status",
+            "workstream",
+            "supervisor_pid",
+            "reason",
+            "stdout_path",
+            "matched_text",
+        ):
+            if diagnostic.get(field) is not None:
+                alert[field] = diagnostic[field]
         alerts.append(alert)
 
     run_status = run.get("status")

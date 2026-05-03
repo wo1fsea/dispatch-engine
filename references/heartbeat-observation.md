@@ -36,7 +36,11 @@ After every successful interactive `de run <repo> --detach` launch:
 5. If the run reaches `completed`, `failed`, or `cancelled`, report the terminal
    state once, include the cancellation reason when available, then pause,
    delete, or otherwise stop the heartbeat.
-6. Track pending technical decisions across heartbeat wakeups. If the same
+6. Before stopping a heartbeat for a terminal run, check `status --json`
+   `lifecycle_diagnostics` and `alerts --json`. Orphaned running agents, stale
+   detached supervisors, and stdout-only decision requests are material even
+   when terminal `next_actions` is empty.
+7. Track pending technical decisions across heartbeat wakeups. If the same
    technical decision is still unresolved after four consecutive heartbeat
    checks, apply the autonomous technical-decision rule below.
 
@@ -114,6 +118,11 @@ Report only material changes:
 - agent failed, stopped heartbeating, or produced malformed evidence
 - new pending decision requires user approval, or qualifies for the
   four-heartbeat autonomous technical-decision fallback
+- stdout appears to request a user decision but no pending decision record or
+  `decision.requested` event exists
+- a worker, reviewer, or validator is running without launch evidence
+- a detached supervisor is stale, or a terminal coordinator/run has orphaned
+  still-running worker, reviewer, or validator agents
 - new protocol violation needs repair
 - new validation evidence changes confidence in completion
 

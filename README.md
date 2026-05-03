@@ -194,7 +194,9 @@ validation output is accepted. Coordinator owns spawn decisions and decides
 worker permission scope through assigned files, allowed write roots,
 normalized capability profiles, and provider-native worker launch options;
 Dispatch Engine owns the durable observability contract for every spawned
-agent.
+agent. Provider Worker Launch requires actual provider-native spawn evidence
+or codex CLI fallback evidence before `agent.spawned` or `running`;
+registration alone is not launch evidence.
 
 Capability profiles make non-file authority auditable without pretending to be
 a provider-independent sandbox. Omitted workstream profiles normalize to
@@ -203,12 +205,15 @@ a provider-independent sandbox. Omitted workstream profiles normalize to
 `package_install`, `dependency_resolution`, `docker_socket`, `service_start`,
 `test_execution`, `runtime_state_write`, and `github_issue_create`, with repo
 write scope embedded as assigned files and allowed write roots. Agent prompts
-render the grant, reports declare `capabilities_exercised` and
-`capability_escalations`, and `status --json` exposes `capability_profiles`
-with active grants, high-risk modes, pending escalation decisions, and
-violations. Provider-native enforcement remains provider-specific; Dispatch
-Engine owns the durable state, prompt, report, status, and protocol violation
-contract.
+render the grant, worker reports declare `capability_profile_id`,
+`capabilities_exercised`, and `capability_escalations`, and `status --json`
+exposes `capability_profiles` with active grants, high-risk modes, pending
+escalation decisions, and violations. Provider-native enforcement remains
+provider-specific; Dispatch Engine owns the durable state, prompt, report,
+status, and protocol violation contract.
+Imported workstreams may include `validation_warnings` when validation commands
+appear inconsistent with the normalized profile, prompting the coordinator to
+narrow validation, request a decision, or block before dispatch.
 
 Runtime prompt templates live under `references/prompts/`. Runtime modules
 should load and render those templates instead of embedding prompt text inline.

@@ -105,6 +105,12 @@ contains detached supervisor process state. `heartbeats/` contains append-only
 agent heartbeat streams. `artifacts/` is reserved for other run-scoped generated
 artifacts.
 
+`status --json` reconciles detached supervisor PID liveness when reading
+`supervisors/`. A supervisor record that still says `running` but has no live
+PID is reported as `stale` in the status-time view without rewriting the source
+JSON. Related `lifecycle_diagnostics` and `alerts --json` entries are material
+operator signals.
+
 Agent registry records include:
 
 - `agent_id`
@@ -341,5 +347,9 @@ termination before escalation, marks active run/supervisor/agent state
 
 `run`, `cancel`, `stop`, `status`, and `tail` support `--json`. `status --json` includes
 structured `agents`, `agent_counts`, `workstream_assignments`,
-`heartbeat_summary`, `protocol_violations`, and cancellation metadata when a
-run is cancelled.
+`heartbeat_summary`, `protocol_violations`, `lifecycle_diagnostics`, and
+cancellation metadata when a run is cancelled. Lifecycle diagnostics include
+running implementation agents with no launch evidence, stale detached
+supervisors, terminal coordinator/run states that leave child agents running
+without active supervision, and conservative stdout-only decision-request
+detection when no pending decision record or `decision.requested` event exists.

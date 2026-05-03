@@ -87,3 +87,7 @@ Write a JSON report to `{report_path}` with this shape:
 ```
 
 Allowed report statuses are `completed`, `completed_with_concerns`, `blocked`, and `failed`.
+Use the canonical field names above. Legacy aliases such as `files_changed`,
+`validation_run`, `conflicts_or_blockers`, `residual_risk`, `open_questions`,
+`capability_profile`, or `capabilities_used` are only repair/migration inputs
+and should not be emitted by new worker prompts or reports.

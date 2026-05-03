@@ -12,6 +12,19 @@ from .runs import initialize_run_dir, new_run_id, plans_dir, run_dir
 
 COORDINATED_OVERLAP = "shared-write-approved"
 REQUIRED_PLAN_FIELDS = ("schema_version", "plan_id", "objective", "workstreams")
+SERVICE_START_MARKERS = (
+    "npm run dev",
+    "npm start",
+    "pnpm dev",
+    "pnpm start",
+    "yarn dev",
+    "yarn start",
+    "python -m http.server",
+    "python3 -m http.server",
+    "docker compose up",
+    "docker-compose up",
+)
+NETWORK_ACCESS_MARKERS = ("http://", "https://", "curl ", "wget ")
 
 
 class PlanValidationError(ValueError):
@@ -185,6 +198,11 @@ def _planned_workstream(workstream: dict[str, Any], timestamp: str) -> dict[str,
 
 
 def _normalize_workstream_capability_profile(workstream: dict[str, Any]) -> None:
+    validation_commands = _string_list(
+        workstream.get("validation", []),
+        field="validation",
+        workstream=workstream,
+    )
     try:
         workstream["capability_profile"] = normalize_capability_profile(
             workstream.get("capability_profile"),
@@ -195,14 +213,65 @@ def _normalize_workstream_capability_profile(workstream: dict[str, Any]) -> None
                 field="allowed_write_roots",
                 workstream=workstream,
             ),
-            validation_commands=_string_list(
-                workstream.get("validation", []),
-                field="validation",
-                workstream=workstream,
-            ),
+            validation_commands=validation_commands,
         )
     except AgentValidationError as exc:
         raise PlanValidationError(f"workstream {workstream.get('id')} capability_profile invalid: {exc}") from exc
+    warnings = _validation_capability_warnings(validation_commands, workstream["capability_profile"])
+    if warnings:
+        workstream["validation_warnings"] = warnings
+
+
+def _validation_capability_warnings(
+    validation_commands: list[str],
+    capability_profile: dict[str, Any],
+) -> list[dict[str, str]]:
+    capabilities = capability_profile.get("capabilities", {})
+    if not isinstance(capabilities, dict):
+        return []
+
+    warnings: list[dict[str, str]] = []
+    for command in validation_commands:
+        lowered = command.lower()
+        service_mode = _capability_mode(capabilities, "service_start")
+        if service_mode == "deny" and _looks_like_service_start(lowered):
+            warnings.append(
+                {
+                    "code": "validation_command_requires_service_start",
+                    "capability": "service_start",
+                    "granted_mode": service_mode,
+                    "command": command,
+                    "message": "Validation command appears to start a service but capability_profile.service_start is deny.",
+                }
+            )
+
+        network_mode = _capability_mode(capabilities, "network_access")
+        if network_mode == "none" and _looks_like_network_access(lowered):
+            warnings.append(
+                {
+                    "code": "validation_command_requires_network_access",
+                    "capability": "network_access",
+                    "granted_mode": network_mode,
+                    "command": command,
+                    "message": "Validation command appears to access a network endpoint but capability_profile.network_access is none.",
+                }
+            )
+    return warnings
+
+
+def _capability_mode(capabilities: dict[str, Any], capability: str) -> str:
+    value = capabilities.get(capability, {})
+    if not isinstance(value, dict):
+        return ""
+    return str(value.get("mode", ""))
+
+
+def _looks_like_service_start(lowered_command: str) -> bool:
+    return any(marker in lowered_command for marker in SERVICE_START_MARKERS)
+
+
+def _looks_like_network_access(lowered_command: str) -> bool:
+    return any(marker in lowered_command for marker in NETWORK_ACCESS_MARKERS)
 
 
 def _string_list(value: Any, *, field: str, workstream: dict[str, Any]) -> list[str]:

@@ -89,6 +89,38 @@ class AgentCapabilityProfilesTests(unittest.TestCase):
             )
             self.assertEqual(profile["capabilities"]["package_install"]["mode"], "allow-project-manager")
 
+    def test_import_records_validation_capability_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _plan()
+            plan["workstreams"][0]["validation"] = [
+                "npm run dev",
+                "curl http://127.0.0.1:3000/health",
+            ]
+
+            state_dir = _import_plan(repo, plan)
+            workstream = json.loads((state_dir / "workstreams" / "01-capabilities.json").read_text())
+
+            self.assertEqual(
+                workstream.get("validation_warnings"),
+                [
+                    {
+                        "code": "validation_command_requires_service_start",
+                        "capability": "service_start",
+                        "granted_mode": "deny",
+                        "command": "npm run dev",
+                        "message": "Validation command appears to start a service but capability_profile.service_start is deny.",
+                    },
+                    {
+                        "code": "validation_command_requires_network_access",
+                        "capability": "network_access",
+                        "granted_mode": "none",
+                        "command": "curl http://127.0.0.1:3000/health",
+                        "message": "Validation command appears to access a network endpoint but capability_profile.network_access is none.",
+                    },
+                ],
+            )
+
     def test_registration_grants_profiles_for_worker_reviewer_and_validator(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

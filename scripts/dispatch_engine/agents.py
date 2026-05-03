@@ -22,6 +22,7 @@ AGENT_SCHEMA_VERSION = 1
 ROLES = frozenset({"coordinator", "worker", "reviewer", "validator"})
 PROVIDERS = frozenset({"codex", "claude"})
 IMPLEMENTATION_ROLES = frozenset({"worker", "reviewer", "validator"})
+COMPLETED_IMPLEMENTATION_AGENT_STATUSES = frozenset({"completed", "completed_with_concerns"})
 IMPLEMENTED_WORKSTREAM_STATUSES = frozenset({"implemented", "completed", "accepted"})
 COORDINATOR_WRITE_ROOTS = [".dispatch/"]
 WORKER_REPORT_REQUIRED_FIELDS = frozenset(
@@ -40,6 +41,16 @@ WORKER_REPORT_REQUIRED_FIELDS = frozenset(
     }
 )
 WORKER_REPORT_STATUSES = frozenset({"completed", "completed_with_concerns", "blocked", "failed"})
+WORKER_REPORT_LEGACY_ALIASES = {
+    "files_changed": "changed_files",
+    "checks": "validation",
+    "validation_run": "validation",
+    "conflicts_or_blockers": "blockers",
+    "residual_risk": "risks",
+    "open_questions": "questions",
+    "capability_profile": "capability_profile_id",
+    "capabilities_used": "capabilities_exercised",
+}
 REVIEWER_REPORT_REQUIRED_FIELDS = frozenset(
     {
         "schema_version",
@@ -665,6 +676,14 @@ def validate_worker_report(run_state_dir: Path, agent_id: str) -> list[dict[str,
     for field in ("changed_files", "validation", "questions", "blockers", "risks"):
         if field in report and not isinstance(report[field], list):
             malformed_details[field] = type(report[field]).__name__
+    legacy_aliases = {
+        alias: canonical
+        for alias, canonical in WORKER_REPORT_LEGACY_ALIASES.items()
+        if alias in report and canonical not in report
+    }
+    if legacy_aliases:
+        malformed_details["legacy_aliases"] = legacy_aliases
+        malformed_details["repair_action"] = "rename legacy worker report aliases to canonical schema fields"
     if malformed_details:
         violations.append(_report_violation("malformed_worker_report", agent, malformed_details))
 
@@ -733,7 +752,7 @@ def detect_protocol_violations(run_state_dir: Path) -> list[dict[str, Any]]:
     for agent in agents:
         if agent.get("role") not in IMPLEMENTATION_ROLES:
             continue
-        if agent.get("status") == "completed":
+        if agent.get("status") in COMPLETED_IMPLEMENTATION_AGENT_STATUSES:
             if agent.get("role") == "worker":
                 worker_violations = validate_worker_report(run_state_dir, agent["agent_id"])
             else:
@@ -848,6 +867,11 @@ def _capability_report_violations(
 
     violations: list[dict[str, Any]] = []
     for index, item in enumerate(capabilities):
+        if isinstance(item, str):
+            item = {
+                "capability": item,
+                "mode": _granted_capability_mode(profile, item),
+            }
         if not isinstance(item, dict):
             violations.append(
                 _report_violation(
@@ -910,6 +934,15 @@ def _capability_use_within_grant(
         if command and isinstance(commands, list) and commands and command not in commands:
             return False
     return True
+
+
+def _granted_capability_mode(profile: dict[str, Any], capability: str) -> str:
+    granted = profile.get("capabilities", {}).get(capability, {})
+    if isinstance(granted, dict):
+        mode = granted.get("mode")
+        if isinstance(mode, str):
+            return mode
+    return ""
 
 
 def _is_high_risk_mode(capability: str, mode: Any) -> bool:
@@ -1435,6 +1468,12 @@ def _path_allowed(path: str, agent: dict[str, Any]) -> bool:
     assigned_files = {item.removeprefix("./") for item in agent.get("assigned_files", [])}
     if normalized in assigned_files:
         return True
+    for assigned in assigned_files:
+        normalized_assigned = assigned.rstrip("/")
+        if assigned.endswith("/") and normalized.startswith(f"{normalized_assigned}/"):
+            return True
+    if normalized in _agent_runtime_evidence_paths(agent):
+        return True
     for root in agent.get("allowed_write_roots", []):
         normalized_root = root.removeprefix("./").rstrip("/")
         if normalized_root and (
@@ -1442,6 +1481,26 @@ def _path_allowed(path: str, agent: dict[str, Any]) -> bool:
         ):
             return True
     return False
+
+
+def _agent_runtime_evidence_paths(agent: dict[str, Any]) -> set[str]:
+    paths = {
+        value.removeprefix("./")
+        for value in (
+            agent.get("report_path"),
+            agent.get("heartbeat_path"),
+            agent.get("log_path"),
+            agent.get("stdout_path"),
+            agent.get("stderr_path"),
+        )
+        if isinstance(value, str) and value
+    }
+    agent_id = agent.get("agent_id")
+    run_id = agent.get("run_id")
+    if isinstance(agent_id, str) and agent_id and isinstance(run_id, str) and run_id:
+        paths.add(f".dispatch/runs/{run_id}/heartbeats/{agent_id}.json")
+        paths.add(f".dispatch/runs/{run_id}/heartbeats/{agent_id}.jsonl")
+    return paths
 
 
 def _has_text(value: Any) -> bool:

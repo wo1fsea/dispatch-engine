@@ -60,6 +60,10 @@ Reviewer reports include:
 - `capabilities_exercised`
 - `capability_escalations`
 
+Allowed reviewer statuses are `accepted`, `changes_requested`, `blocked`, and
+`failed`. Use the canonical field names above; do not substitute aliases for
+`changes_requested` or `accepted` in durable reviewer reports.
+
 Reviewer reports are acceptance evidence, not automated final acceptance. A
 reviewer may recommend continuation, changes, blocking, or escalation. The
 coordinator/operator combines reviewer evidence with worker evidence, validator
@@ -86,8 +90,9 @@ Validator reports include:
 - `capability_escalations`
 
 For `passed`, `failed`, or `blocked`, a validator report must include command
-evidence, output summary, and at least one artifact reference. For `skipped`,
-it must include a specific not-run reason.
+evidence, output summary, and at least one artifact reference. `artifacts`
+must be an array. For `skipped`, it must include a specific `not_run_reason`
+string.
 
 Validators must not use `status: "completed"` for new reports. Version 1
 runtime validation accepts that value only as a narrow compatibility alias for
@@ -122,6 +127,9 @@ Runtime may emit conservative violations for mechanical problems:
 For validator report schema failures, `status --json` may include
 `next_actions[]` items with `type: "repair_report_schema"`, the validator
 `agent_id`, `report_path`, diagnostic code, and any suggested canonical status.
+Coordinators should satisfy those actions through a recorded repair helper or
+repair worker with its own prompt/report evidence. They should not silently
+hand-edit malformed reviewer or validator JSON without a durable repair record.
 
 Runtime must not decide whether a review finding is correct, whether a command
 is sufficient for acceptance, or whether a residual risk is acceptable.

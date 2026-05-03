@@ -187,6 +187,9 @@ capability profiles, and provider-native worker launch options. Dispatch
 Engine owns the durable observability contract. Coordinators may use
 provider-native spawn mechanisms for workers, reviewers, and validators, but
 every spawned agent must be visible through the same `.dispatch/` files.
+Provider Worker Launch requires actual provider-native spawn evidence or codex
+CLI fallback evidence before `agent.spawned` or `running`; registration alone
+is not launch evidence.
 
 Workers, reviewers, and validators must be registered before their output is
 treated as valid. Worker output requires a durable JSON report under
@@ -196,8 +199,11 @@ belongs under `.dispatch/runs/<run-id>/validation/<agent-id>.json`. Missing
 reports, malformed reports, or worker changed files outside the assigned files
 and allowed write roots are protocol violations. Validator report statuses are
 `passed`, `failed`, `blocked`, and `skipped`; do not use `completed` for
-validator report status. Prompt snapshots, reports,
-logs, status records, and heartbeats for spawned agents live under:
+validator report status. Worker report statuses are `completed`,
+`completed_with_concerns`, `blocked`, and `failed`; both completed statuses are
+valid completion evidence when the worker report is otherwise valid. Prompt
+snapshots, reports, logs, status records, and heartbeats for spawned agents
+live under:
 
 ```text
 .dispatch/runs/<run-id>/agents/
@@ -217,10 +223,15 @@ capability vocabulary is `network_access`, `package_install`,
 `dependency_resolution`, `docker_socket`, `service_start`, `test_execution`,
 `runtime_state_write`, and `github_issue_create`. Provider enforcement remains
 provider-specific; Dispatch Engine owns the auditable state, prompt, report,
-status, and protocol-violation contract. Agent reports may include
-`capabilities_exercised` and `capability_escalations`; capability use beyond
-the grant is `capability_overreach` unless the exercised item links a recorded
-decision id.
+status, and protocol-violation contract. Worker reports should include
+`capability_profile_id`, `capabilities_exercised`, and
+`capability_escalations`; runtime helper-written reports default those fields,
+and capability use beyond the grant is `capability_overreach` unless the
+exercised item links a recorded decision id.
+Imported workstreams may include `validation_warnings` when validation commands
+look inconsistent with the normalized profile; coordinators should resolve
+those warnings before dispatch by narrowing validation, requesting a decision,
+or blocking the workstream.
 
 Live `de run` registers `coordinator-001` with status `running`, then updates it
 to `completed` or `failed` when the provider process exits. `de status` reads

@@ -76,6 +76,33 @@ class DetachedCoordinatorSupervisionTests(unittest.TestCase):
             final_status = _wait_for_coordinator_status(repo, run["run_id"], "completed")
             self.assertEqual(final_status["supervisor_counts"]["by_status"], {"completed": 1})
 
+    def test_status_reconciles_dead_running_supervisor_pid_as_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo, plan_id="plan-001", objective="stale supervisor objective")
+            state_dir = Path(run["state_dir"])
+            _write_supervisor_record(state_dir, status="running", supervisor_pid=999999)
+
+            status = run_status(repo, run_id=run["run_id"])
+
+            self.assertEqual(status["supervisors"][0]["status"], "stale")
+            self.assertEqual(status["supervisor_counts"]["by_status"], {"stale": 1})
+            self.assertEqual(status["lifecycle_diagnostics"][0]["type"], "stale_detached_supervisor")
+            self.assertEqual(status["lifecycle_diagnostics"][0]["supervisor_pid"], 999999)
+
+    def test_status_keeps_alive_running_supervisor_pid_running(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo, plan_id="plan-001", objective="alive supervisor objective")
+            state_dir = Path(run["state_dir"])
+            _write_supervisor_record(state_dir, status="running", supervisor_pid=os.getpid())
+
+            status = run_status(repo, run_id=run["run_id"])
+
+            self.assertEqual(status["supervisors"][0]["status"], "running")
+            self.assertEqual(status["supervisor_counts"]["by_status"], {"running": 1})
+            self.assertEqual(status["lifecycle_diagnostics"], [])
+
 
 def _wait_for_coordinator_status(repo: Path, run_id: str, expected: str) -> dict:
     deadline = time.monotonic() + 5
@@ -144,6 +171,34 @@ def _import_plan(repo: Path, *, plan_id: str, objective: str) -> dict:
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(json.dumps(_plan(plan_id, objective)) + "\n", encoding="utf-8")
     return import_dispatch_plan(repo, plan_path)
+
+
+def _write_supervisor_record(state_dir: Path, *, status: str, supervisor_pid: int | None) -> None:
+    path = state_dir / "supervisors" / "coordinator-001.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "agent_id": "coordinator-001",
+                "run_id": state_dir.name,
+                "repo_root": str(state_dir.parent.parent.parent),
+                "provider": "codex",
+                "profile": "codex-exec",
+                "status": status,
+                "supervisor_pid": supervisor_pid,
+                "created_at": "2026-05-03T00:00:00Z",
+                "updated_at": "2026-05-03T00:00:00Z",
+                "completed_at": None,
+                "supervisor_path": f".dispatch/runs/{state_dir.name}/supervisors/coordinator-001.json",
+                "supervisor_stdout_path": f".dispatch/runs/{state_dir.name}/logs/coordinator-001.supervisor.stdout.log",
+                "supervisor_stderr_path": f".dispatch/runs/{state_dir.name}/logs/coordinator-001.supervisor.stderr.log",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _plan(plan_id: str, objective: str) -> dict:

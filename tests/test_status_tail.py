@@ -7,11 +7,11 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from dispatch_engine.agents import register_agent
+from dispatch_engine.agents import register_agent, register_worker_agent
 from dispatch_engine.cli import main
 from dispatch_engine.events import protocol_violation
 from dispatch_engine.plan_schema import import_dispatch_plan
-from dispatch_engine.state import run_status, tail_events
+from dispatch_engine.state import run_alerts, run_status, tail_events
 
 
 class StatusTailTests(unittest.TestCase):
@@ -214,6 +214,132 @@ class StatusTailTests(unittest.TestCase):
             self.assertIn("Run not found", status["summary"])
             self.assertIn("Run not found", tail["summary"])
 
+    def test_status_and_alerts_surface_orphaned_running_child_after_terminal_coordinator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="orphaned child objective")
+            state_dir = Path(plan["state_dir"])
+            _set_run_status(state_dir, "completed")
+            register_agent(
+                state_dir,
+                agent_id="coordinator-001",
+                role="coordinator",
+                provider="codex",
+                profile="codex-exec",
+                status="completed",
+                completed_at="2026-05-03T00:00:00Z",
+            )
+            register_agent(
+                state_dir,
+                agent_id="validator-001",
+                role="validator",
+                provider="codex",
+                profile="codex-exec",
+                status="running",
+                workstream="01-status-tail",
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            diagnostics = status["lifecycle_diagnostics"]
+            self.assertIn("orphaned_running_agent", [item["type"] for item in diagnostics])
+            orphaned = [item for item in diagnostics if item["type"] == "orphaned_running_agent"][0]
+            self.assertEqual(orphaned["agent_id"], "validator-001")
+            self.assertEqual(status["next_actions"], [])
+            self.assertIn(
+                "orphaned_running_agent",
+                [alert["type"] for alert in alerts["alerts"]],
+            )
+
+    def test_status_and_alerts_surface_running_agent_without_launch_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="missing launch evidence objective")
+            state_dir = Path(plan["state_dir"])
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                status="running",
+                workstream="01-status-tail",
+                assigned_files=["scripts/dispatch_engine/state.py"],
+                allowed_write_roots=[],
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            self.assertEqual(
+                [item["type"] for item in status["lifecycle_diagnostics"]],
+                ["missing_agent_launch_evidence"],
+            )
+            self.assertEqual(status["lifecycle_diagnostics"][0]["agent_id"], "worker-001")
+            self.assertIn(
+                "missing_agent_launch_evidence",
+                [alert["type"] for alert in alerts["alerts"]],
+            )
+            self.assertIn(
+                "missing_agent_launch_evidence",
+                status["next_actions"][0]["diagnostic_types"],
+            )
+
+    def test_running_agent_with_existing_log_file_has_launch_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="existing launch evidence objective")
+            state_dir = Path(plan["state_dir"])
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                status="running",
+                workstream="01-status-tail",
+                assigned_files=["scripts/dispatch_engine/state.py"],
+                allowed_write_roots=[],
+            )
+            stdout_path = state_dir / "logs" / "worker-001.stdout.log"
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text("", encoding="utf-8")
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertEqual(status["lifecycle_diagnostics"], [])
+
+    def test_status_and_alerts_surface_stdout_only_decision_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="stdout decision objective")
+            state_dir = Path(plan["state_dir"])
+            register_agent(
+                state_dir,
+                agent_id="coordinator-001",
+                role="coordinator",
+                provider="codex",
+                profile="codex-exec",
+                status="completed",
+                stdout_path=f".dispatch/runs/{state_dir.name}/logs/coordinator-001.stdout.log",
+            )
+            stdout_path = state_dir / "logs" / "coordinator-001.stdout.log"
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text(
+                "I need your decision before proceeding.\nApprove expanding the scope?\n",
+                encoding="utf-8",
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            diagnostics = status["lifecycle_diagnostics"]
+            self.assertEqual([item["type"] for item in diagnostics], ["stdout_only_decision_request"])
+            self.assertIn("decision before proceeding", diagnostics[0]["matched_text"])
+            self.assertIn(
+                "stdout_only_decision_request",
+                [alert["type"] for alert in alerts["alerts"]],
+            )
+
 
 def _import_plan(repo: Path, *, objective: str) -> dict:
     plan_path = repo / ".dispatch" / "plans" / "plan-001.json"
@@ -241,6 +367,14 @@ def _plan(objective: str) -> dict:
         ],
         "decisions": [],
     }
+
+
+def _set_run_status(state_dir: Path, status: str) -> None:
+    run_path = state_dir / "run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run["status"] = status
+    run["updated_at"] = "2026-05-03T00:00:00Z"
+    run_path.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

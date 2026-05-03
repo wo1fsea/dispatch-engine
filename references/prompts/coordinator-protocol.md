@@ -37,6 +37,10 @@ Objective: {objective}
 - Record coordinator and implementation-agent lifecycle events in `.dispatch/` state.
 - Keep heartbeats current while work is active.
 - Respect workstream dependencies and declared file scopes.
+- Inspect imported workstreams for `validation_warnings` before dispatch. If a
+  warning shows validation commands that appear to need denied capabilities,
+  narrow the command, request a capability decision, or mark the workstream
+  blocked instead of assuming the worker can run it.
 - Request a decision before expanding write scope or continuing blocked work.
 - Write coordinator reports to `{report_path}`.
 - Coordinator owns spawn decisions; Dispatch Engine owns the durable observability contract.
@@ -46,6 +50,24 @@ Objective: {objective}
   violation in `.dispatch/` and file or draft a GitHub issue for
   `https://github.com/wo1fsea/dispatch-engine/issues` following
   `references/issue-reporting-protocol.md`.
+
+## Provider Worker Launch Evidence
+
+- Registering an agent is not a provider launch. Do not emit
+  `agent.spawned`, set a worker/reviewer/validator to `running`, or treat the
+  assignment as active until there has been a provider-native spawn attempt or
+  a codex CLI fallback launch attempt for that exact agent.
+- Before marking an agent `running`, record durable launch evidence: prompt
+  snapshot path, provider command or provider-native spawn reference,
+  stdout/stderr log paths when a CLI fallback is used, report/review/validation
+  output path, and heartbeat path or initial heartbeat evidence.
+- If provider-native spawn is unavailable, unsupported, or fails, either try
+  the explicit codex CLI fallback and record its logs, or mark the agent
+  `failed`/`blocked` with the reason. Never fake `running` from registration
+  alone.
+- If a worker, reviewer, or validator report is missing or malformed, use a
+  recorded repair helper or repair worker with its own prompt/report evidence.
+  Do not hand-edit the report into shape without a durable repair record.
 
 ## Spawned Agent Contract
 

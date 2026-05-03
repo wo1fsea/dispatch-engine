@@ -141,6 +141,23 @@ fallback wording when wakeups are unavailable.
 
 The provider process launched by `de run` is a coordinator only. It may plan, dispatch, monitor, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`, but it must not directly implement project-file changes. Project implementation belongs to registered workers, reviewers, or validators using provider-native spawn mechanisms, normalized capability profiles, and the shared `.dispatch/` observability contract.
 
+### Provider Worker Launch
+
+Registration is not launch evidence. A coordinator must not mark a
+worker/reviewer/validator `running` or emit `agent.spawned` until it has
+attempted a provider-native spawn or an explicit codex CLI fallback for that
+agent. Durable evidence should include the prompt snapshot, provider spawn
+reference or CLI command, stdout/stderr log paths for CLI fallback,
+role-specific report path, and heartbeat evidence. If no launch path works, the
+agent or workstream should be marked `failed` or `blocked` with the reason
+instead of presenting fake running state.
+
+Imported workstreams may include `validation_warnings` when validation commands
+appear inconsistent with the normalized capability profile, such as service
+startup under `service_start: deny` or local HTTP checks under
+`network_access: none`. Treat those warnings as pre-dispatch prompts to narrow
+validation, request a decision, or block the workstream.
+
 ## Watching Progress
 
 Use these while the external interactive Codex remains in conversation with the user:
@@ -189,6 +206,14 @@ fields, and status/alert/event evidence. A report that exercises
 `service_start`, `test_execution`, `runtime_state_write`, or
 `github_issue_create` beyond the grant is a protocol violation unless it links
 a decision id.
+
+`status --json` also includes `lifecycle_diagnostics` for material supervision
+gaps observed at read time. Treat `missing_agent_launch_evidence`,
+`stale_detached_supervisor`, `orphaned_running_agent`, and
+`stdout_only_decision_request` diagnostics as operator-visible blockers. They
+are also surfaced by `alerts --json`; terminal runs may still have empty
+`next_actions`, so do not use `next_actions` alone to decide that a detached
+run needs no follow-up.
 
 Runtime state is stored under:
 

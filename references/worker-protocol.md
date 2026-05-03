@@ -58,6 +58,13 @@ provider-native worker launch options. Provider enforcement remains
 provider-specific; Dispatch Engine owns the auditable state, prompt, report,
 status, and protocol-violation contract.
 
+For Provider Worker Launch details, use
+`references/prompts/coordinator-protocol.md`. In short, registering a worker,
+reviewer, or validator is not enough to mark it running: the coordinator needs
+provider-native spawn evidence or codex CLI fallback evidence first. Imported
+`validation_warnings` should be handled before dispatch by narrowing
+validation, requesting a capability decision, or blocking the workstream.
+
 ## Agent Registration
 
 Workers, reviewers, and validators must be registered in
@@ -135,11 +142,21 @@ A worker returns:
 
 Worker reports are JSON files with `schema_version`, `agent_id`, `role`,
 `workstream`, `status`, `summary`, `changed_files`, `validation`, `questions`,
-`blockers`, `risks`, `capability_profile_id`, `capabilities_exercised`, and
-`capability_escalations`. A completed worker with a missing report, malformed
-report, changed file outside assigned scope, or exercised capability broader
-than the granted profile is a `protocol.violation`. Capability overreach is
-allowed only when the exercised item links a recorded decision id.
+`blockers`, and `risks`. New reports should also include
+`capability_profile_id`, `capabilities_exercised`, and
+`capability_escalations`; runtime helper-written reports default those fields.
+A completed worker with a missing report, malformed report, changed file
+outside assigned scope, or exercised capability broader than the granted
+profile is a `protocol.violation`. `completed_with_concerns` is valid
+completed evidence when the worker report is otherwise valid. A worker's own
+run evidence paths for report, log, heartbeat, stdout, and stderr are valid
+`changed_files` entries even when project write scope is narrower. Capability
+overreach is allowed only when the exercised item links a recorded decision id.
+Legacy aliases such as `files_changed`, `validation_run`,
+`conflicts_or_blockers`, `residual_risk`, `open_questions`,
+`capability_profile`, and `capabilities_used` are accepted only as
+repair/migration inputs and should produce field-level diagnostics, not a new
+report shape.
 
 ## Reviewer Input
 

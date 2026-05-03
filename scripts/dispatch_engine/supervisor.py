@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
@@ -153,7 +154,7 @@ def read_supervisors(run_state_dir: Path) -> list[dict[str, Any]]:
     if not supervisors_dir.exists():
         return []
     return [
-        json.loads(path.read_text(encoding="utf-8"))
+        _reconcile_supervisor_process(json.loads(path.read_text(encoding="utf-8")))
         for path in sorted(supervisors_dir.glob("*.json"))
     ]
 
@@ -285,6 +286,58 @@ def _write_supervisor(path: Path, record: dict[str, Any]) -> None:
     tmp_path = path.with_name(f".{path.name}.tmp")
     tmp_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp_path.replace(path)
+
+
+def _reconcile_supervisor_process(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a status-time view of supervisor process liveness."""
+
+    reconciled = dict(record)
+    if reconciled.get("status") != "running":
+        return reconciled
+
+    pid = _coerce_pid(reconciled.get("supervisor_pid"))
+    if pid is None:
+        reconciled["previous_status"] = reconciled.get("status")
+        reconciled["status"] = "stale"
+        reconciled["observed_status"] = "stale"
+        reconciled["process_alive"] = False
+        reconciled["stale_reason"] = "missing_supervisor_pid"
+        return reconciled
+
+    process_alive = _pid_is_alive(pid)
+    reconciled["process_alive"] = process_alive
+    reconciled["observed_status"] = "running" if process_alive else "stale"
+    if not process_alive:
+        reconciled["previous_status"] = reconciled.get("status")
+        reconciled["status"] = "stale"
+        reconciled["stale_reason"] = "supervisor_pid_not_alive"
+    return reconciled
+
+
+def _coerce_pid(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        pid = int(value)
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as exc:
+        if exc.errno == errno.EPERM:
+            return True
+        if exc.errno == errno.ESRCH:
+            return False
+        return False
+    return True
 
 
 def _run_relative_file(run_state_dir: Path, path: Path) -> str:

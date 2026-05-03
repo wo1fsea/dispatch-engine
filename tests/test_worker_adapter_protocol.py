@@ -97,6 +97,96 @@ class WorkerAdapterProtocolTests(unittest.TestCase):
             self.assertEqual(report["agent_id"], "worker-001")
             self.assertEqual(report["workstream"], "01-worker-protocol")
 
+    def test_completed_with_concerns_worker_satisfies_completed_workstream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="01-worker-protocol",
+                assigned_files=["scripts/dispatch_engine/agents.py"],
+                allowed_write_roots=[],
+                status="running",
+            )
+            complete_worker(
+                state_dir,
+                "worker-001",
+                report=_worker_report(
+                    changed_files=["scripts/dispatch_engine/agents.py"],
+                    status="completed_with_concerns",
+                ),
+            )
+            agent = read_agent(state_dir, "worker-001")
+            assert agent is not None
+            agent["status"] = "completed_with_concerns"
+            (state_dir / "agents" / "worker-001.json").write_text(
+                json.dumps(agent, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            _mark_workstream_completed(state_dir)
+
+            self.assertEqual(validate_worker_report(state_dir, "worker-001"), [])
+            self.assertEqual(detect_protocol_violations(state_dir), [])
+            self.assertEqual(run_status(repo)["workstream_assignments"], [])
+
+    def test_worker_report_legacy_aliases_produce_precise_repair_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="01-worker-protocol",
+                assigned_files=["scripts/dispatch_engine/agents.py"],
+                allowed_write_roots=[],
+                status="running",
+            )
+            (state_dir / "reports" / "worker-001.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "agent_id": "worker-001",
+                        "role": "worker",
+                        "workstream": "01-worker-protocol",
+                        "status": "completed",
+                        "summary": "Legacy-ish shape from an older prompt.",
+                        "files_changed": ["scripts/dispatch_engine/agents.py"],
+                        "validation_run": [],
+                        "open_questions": [],
+                        "conflicts_or_blockers": [],
+                        "residual_risk": [],
+                        "capability_profile": "worker-standard",
+                        "capabilities_used": ["test_execution"],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            violations = validate_worker_report(state_dir, "worker-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["malformed_worker_report"])
+            details = violations[0]["details"]
+            self.assertEqual(
+                details["legacy_aliases"],
+                {
+                    "files_changed": "changed_files",
+                    "validation_run": "validation",
+                    "conflicts_or_blockers": "blockers",
+                    "residual_risk": "risks",
+                    "open_questions": "questions",
+                    "capability_profile": "capability_profile_id",
+                    "capabilities_used": "capabilities_exercised",
+                },
+            )
+            self.assertIn("changed_files", details["missing_fields"])
+            self.assertIn("validation", details["missing_fields"])
+
     def test_missing_worker_report_is_a_protocol_violation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -184,6 +274,83 @@ class WorkerAdapterProtocolTests(unittest.TestCase):
             self.assertEqual([item["violation"] for item in violations], ["out_of_scope_changed_file"])
             self.assertEqual(violations[0]["details"]["changed_files"], ["srcology/readme.md"])
 
+    def test_worker_runtime_evidence_paths_are_allowed_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            agent = register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="01-worker-protocol",
+                assigned_files=[],
+                allowed_write_roots=[],
+                status="running",
+            )
+            complete_worker(
+                state_dir,
+                "worker-001",
+                report=_worker_report(
+                    changed_files=[
+                        agent["report_path"],
+                        agent["log_path"],
+                        agent["stdout_path"],
+                        agent["stderr_path"],
+                        f".dispatch/runs/{state_dir.name}/heartbeats/worker-001.jsonl",
+                    ],
+                ),
+            )
+
+            self.assertEqual(validate_worker_report(state_dir, "worker-001"), [])
+
+    def test_assigned_directory_allows_nested_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="01-worker-protocol",
+                assigned_files=["packages/protocol/"],
+                allowed_write_roots=[],
+                status="running",
+            )
+            complete_worker(
+                state_dir,
+                "worker-001",
+                report=_worker_report(changed_files=["packages/protocol/src/index.ts"]),
+            )
+
+            self.assertEqual(validate_worker_report(state_dir, "worker-001"), [])
+
+    def test_capabilities_exercised_string_shorthand_uses_granted_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="01-worker-protocol",
+                assigned_files=["scripts/dispatch_engine/agents.py"],
+                allowed_write_roots=[],
+                status="running",
+            )
+            complete_worker(
+                state_dir,
+                "worker-001",
+                report=_worker_report(
+                    changed_files=["scripts/dispatch_engine/agents.py"],
+                    capabilities_exercised=["test_execution"],
+                ),
+            )
+
+            self.assertEqual(validate_worker_report(state_dir, "worker-001"), [])
+
     def test_worker_report_helper_rejects_non_worker_agents(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -266,6 +433,10 @@ class WorkerAdapterProtocolTests(unittest.TestCase):
                 "allowed write roots",
                 '"changed_files"',
                 '"validation"',
+                '"capability_profile_id"',
+                '"capabilities_exercised"',
+                '"capability_escalations"',
+                "Legacy aliases",
             ]
             for fragment in expected_fragments:
                 self.assertIn(fragment, prompt)
@@ -339,9 +510,14 @@ def _plan() -> dict:
     }
 
 
-def _worker_report(changed_files: list[str]) -> dict:
+def _worker_report(
+    changed_files: list[str],
+    *,
+    status: str = "completed",
+    capabilities_exercised: list[str | dict] | None = None,
+) -> dict:
     return {
-        "status": "completed",
+        "status": status,
         "summary": "Implemented scoped worker protocol changes.",
         "changed_files": changed_files,
         "validation": [
@@ -354,6 +530,7 @@ def _worker_report(changed_files: list[str]) -> dict:
         "questions": [],
         "blockers": [],
         "risks": [],
+        "capabilities_exercised": list(capabilities_exercised or []),
     }
 
 
