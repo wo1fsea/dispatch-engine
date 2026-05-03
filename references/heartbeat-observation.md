@@ -43,11 +43,19 @@ workflow.
 
 ## Interval Guidance
 
-Use the quietest interval that still protects the user:
+Default heartbeat interval is **15 minutes**. In the Codex App heartbeat
+automation, use:
+
+```text
+FREQ=MINUTELY;INTERVAL=15
+```
+
+Override the default only when the run risk or urgency clearly justifies it:
 
 - **5 minutes**: high-risk work, active decision points, failing agents, or
   time-sensitive validation.
-- **10-15 minutes**: normal multi-agent implementation and review.
+- **15 minutes**: default for normal multi-agent implementation, review, and
+  validation.
 - **30 minutes**: long-running validation, slow research, or low-urgency
   background work.
 

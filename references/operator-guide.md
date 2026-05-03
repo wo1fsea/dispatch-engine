@@ -120,7 +120,7 @@ host-layer thread heartbeat when the current host supports wakeups. The
 heartbeat wakes Codex, and Codex then reads Dispatch Engine state and reports
 only material changes. When the run completes, fails, or is cancelled, Codex
 must stop the heartbeat. Dispatch Engine does not send chat messages or own the
-host wakeup.
+host wakeup. The default heartbeat interval is 15 minutes.
 
 See `references/heartbeat-observation.md` for the required heartbeat lifecycle,
 recommended intervals, the heartbeat prompt shape, material-change rules, and

@@ -123,7 +123,7 @@ files, allowed write roots, validation expectations, and report path.
 5. Preview the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
-8. Immediately create a host-layer heartbeat monitor for the current thread after every successful interactive detached launch. This is required, not optional, when the host supports thread wakeups.
+8. Immediately create a host-layer heartbeat monitor for the current thread after every successful interactive detached launch. This is required, not optional, when the host supports thread wakeups. The default interval is 15 minutes.
 9. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
 10. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
 11. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.

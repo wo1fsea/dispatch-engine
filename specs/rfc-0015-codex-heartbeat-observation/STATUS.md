@@ -26,7 +26,7 @@ surfaces: `status --json` `next_actions`, `events --since`, `alerts --json`,
 and `resolve-decision`. The heartbeat policy has been tightened: heartbeat
 observation is required after every interactive detached launch when the host
 supports wakeups, and the heartbeat must be stopped once the run reaches a
-terminal state.
+terminal state. The default heartbeat interval is 15 minutes.
 
 ## Workstreams
 

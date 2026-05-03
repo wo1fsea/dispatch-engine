@@ -21,7 +21,7 @@ from `SKILL.md`, `README.md`, `references/operator-flow.md`, and
 The runbook includes:
 
 - required heartbeat lifecycle
-- recommended interval guidance
+- default 15-minute interval guidance
 - heartbeat prompt shape
 - material-change reporting rules
 - fallback wording when host wakeups are unavailable

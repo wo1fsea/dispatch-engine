@@ -84,6 +84,10 @@ must:
    `failed`, or `cancelled`.
 7. Avoid claiming live progress from chat memory alone.
 
+The default heartbeat interval is 15 minutes. In Codex App heartbeat
+configuration, use `FREQ=MINUTELY;INTERVAL=15` unless the operator records a
+specific high-risk or low-urgency reason for overriding it.
+
 If heartbeat cannot be configured, the skill must warn that the detached run
 will not be proactively supervised in the foreground chat and ask before
 continuing without heartbeat observation.
