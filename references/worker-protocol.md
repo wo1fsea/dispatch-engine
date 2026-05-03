@@ -53,7 +53,10 @@ Dispatch Engine intentionally gives the coordinator high provider permissions.
 The coordinator still remains coordinator-only: it must not directly implement
 project-file changes. Worker, reviewer, and validator capability scope is
 decided by the coordinator per assignment through assigned files, allowed write
-roots, validation expectations, and provider-native worker launch options.
+roots, validation expectations, normalized `capability_profile` grants, and
+provider-native worker launch options. Provider enforcement remains
+provider-specific; Dispatch Engine owns the auditable state, prompt, report,
+status, and protocol-violation contract.
 
 ## Agent Registration
 
@@ -73,6 +76,15 @@ under:
 
 Worker reports live under `reports/`, reviewer evidence lives under
 `reviews/`, and validator evidence lives under `validation/`.
+
+Every worker, reviewer, and validator registry record includes the granted
+`capability_profile`, its source, and any decision ids that expanded it.
+Omitted profiles normalize conservatively: `worker-standard`,
+`reviewer-standard`, or `validator-standard`. Initial capability keys are
+`network_access`, `package_install`, `dependency_resolution`, `docker_socket`,
+`service_start`, `test_execution`, `runtime_state_write`, and
+`github_issue_create`. Repo write scope remains the existing assigned-files and
+allowed-write-roots contract, now embedded in the normalized profile.
 
 Status readers use these files to report agent counts by role and status,
 active assignments, heartbeat freshness, pending decisions, and
@@ -101,6 +113,7 @@ A worker receives:
 - allowed file scope from the explicit plan
 - dependency and parallel group context
 - validation expectations
+- granted capability profile and escalation policy
 - report path under `.dispatch/runs/<run-id>/reports/`
 - a reminder that the worker is not alone in the codebase and must preserve
   unrelated changes
@@ -116,11 +129,17 @@ A worker returns:
 - questions
 - blockers
 - residual risks
+- `capability_profile_id`
+- `capabilities_exercised`
+- `capability_escalations`
 
 Worker reports are JSON files with `schema_version`, `agent_id`, `role`,
 `workstream`, `status`, `summary`, `changed_files`, `validation`, `questions`,
-`blockers`, and `risks`. A completed worker with a missing report, malformed
-report, or changed file outside assigned scope is a `protocol.violation`.
+`blockers`, `risks`, `capability_profile_id`, `capabilities_exercised`, and
+`capability_escalations`. A completed worker with a missing report, malformed
+report, changed file outside assigned scope, or exercised capability broader
+than the granted profile is a `protocol.violation`. Capability overreach is
+allowed only when the exercised item links a recorded decision id.
 
 ## Reviewer Input
 
@@ -146,6 +165,11 @@ A reviewer returns:
 ## Rule
 
 Each worker owns one workstream at a time. Parallel workers must be told they are not alone in the codebase and must avoid files outside their declared scope.
+
+Agents must stop before using a denied or broader capability. They should record
+the needed capability, requested mode, reason, risk, and validation expectation
+as a blocker or decision request, then wait for the coordinator/operator to
+approve, deny, narrow, or reassign the work.
 
 Reviewer acceptance is a separate phase before a workstream is considered
 accepted. A worker report alone is not completion evidence. Final acceptance is

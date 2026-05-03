@@ -36,6 +36,10 @@ Request a decision before continuing when any of these are true:
   sequencing or ownership call.
 - The next action would discard, overwrite, or reinterpret another worker's
   existing changes.
+- The next action requires a capability outside the granted
+  `capability_profile`, including broader `network_access`, `package_install`,
+  `dependency_resolution`, `docker_socket`, `service_start`, `test_execution`,
+  `runtime_state_write`, or `github_issue_create`.
 
 When in doubt, narrow the immediate work, record the blocker, and ask the
 operator rather than guessing.
@@ -55,6 +59,8 @@ Workers:
   contradicted by current repo state.
 - Do not silently expand assigned files, validation commands, or acceptance
   criteria.
+- Do not silently use a denied or broader capability. Record the capability,
+  requested mode, reason, risk, and validation expectation before continuing.
 - Include blocker ids in worker reports when they paused work.
 
 Reviewers and validators:
@@ -137,6 +143,10 @@ Decision and blocker helpers emit run events for tail visibility:
 
 Events are observability, not the source of decision truth. The latest folded
 records in `decisions.jsonl` and `blockers.jsonl` are the query surface.
+Capability escalation uses the same decision/blocker records. Status may also
+surface `capability.profile.granted`, `capability.escalation.requested`,
+`capability.escalation.resolved`, and `capability.violation` events as audit
+signals when helpers or coordinators emit them.
 
 ## Validation Signal
 

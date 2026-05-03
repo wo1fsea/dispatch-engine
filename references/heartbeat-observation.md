@@ -34,7 +34,8 @@ After every successful interactive `de run <repo> --detach` launch:
 3. On each wakeup, read `status --json`, `events --since`, and `alerts --json`.
 4. Report only material changes.
 5. If the run reaches `completed`, `failed`, or `cancelled`, report the terminal
-   state once, then pause, delete, or otherwise stop the heartbeat.
+   state once, include the cancellation reason when available, then pause,
+   delete, or otherwise stop the heartbeat.
 6. Track pending technical decisions across heartbeat wakeups. If the same
    technical decision is still unresolved after four consecutive heartbeat
    checks, apply the autonomous technical-decision rule below.
@@ -88,7 +89,8 @@ user before running resolve-decision. Do not resolve decisions on your own
 unless the four-heartbeat autonomous technical-decision fallback applies. Do
 not claim progress from chat memory alone. If status --json shows the run is
 completed, failed, or cancelled, report that terminal state and stop this
-heartbeat.
+heartbeat. For cancelled runs, include status --json cancellation.reason and
+any run.cancel events from events --since.
 
 If the same pending technical decision has been reported across four
 consecutive heartbeat checks without user resolution, use interactive Codex
@@ -107,7 +109,7 @@ as a snapshot.
 
 Report only material changes:
 
-- run completed, failed, or became blocked
+- run completed, failed, became blocked, or was cancelled
 - workstream completed, failed, or needs reassignment
 - agent failed, stopped heartbeating, or produced malformed evidence
 - new pending decision requires user approval, or qualifies for the
@@ -185,9 +187,13 @@ Use the Codex-facing CLI surfaces in this order:
    the last heartbeat.
 3. `alerts --json`: snapshot of decisions, failures, violations, and other
    user-relevant risks.
-4. `resolve-decision --id <decision-id> --option <option-id> --json`: write
+4. `cancel --run-id <run-id> --reason <text> --json`: user-requested
+   cancellation control. Use `stop` only as a natural-language alias. After it
+   returns, read `status --json`, `events --since`, and `alerts --json`, report
+   the terminal cancelled state once, and stop the heartbeat.
+5. `resolve-decision --id <decision-id> --option <option-id> --json`: write
    surface after explicit user approval.
-5. `resolve-decision --autonomous-technical --unanswered-heartbeats <count>
+6. `resolve-decision --autonomous-technical --unanswered-heartbeats <count>
    --autonomous-rationale <text> --validation-expected <command> --json`:
    structured write surface for an allowed four-heartbeat autonomous technical
    fallback.

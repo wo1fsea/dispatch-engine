@@ -73,6 +73,8 @@ CLI availability smoke checks from the skill root:
 python3 scripts/de.py --help
 python3 scripts/de.py version
 python3 scripts/de.py run --help
+python3 scripts/de.py cancel --help
+python3 scripts/de.py stop --help
 ```
 
 Target repo smoke checks after importing a plan:
@@ -111,6 +113,17 @@ metadata. Record the choice with `resolve-decision --autonomous-technical`,
 which uses actor `interactive-codex-autonomous`, appends the source-of-truth
 entry to `.dispatch/runs/<run-id>/decisions.jsonl`, and makes a compact
 `status --json` `autonomous_decisions` summary available for final reporting.
+
+When the user asks to stop a Dispatch Engine run, interactive Codex should call
+`de cancel <repo> --run-id <run-id> --reason <text> --json`. The command
+resolves the latest run when `--run-id` is omitted, records a durable terminal
+`cancelled` state, attempts graceful process termination before escalation,
+preserves `.dispatch/` evidence, and marks active supervisor/coordinator/agent
+records cancelled with the same reason. `de stop` is an alias for natural
+language, while `cancel` remains canonical. Cancellation is not a failure;
+after cancelling, Codex should read `status --json`, `events --since`, and
+`alerts --json`, report the reason once, and stop any host heartbeat for the
+run.
 
 Target repo quickstart:
 
@@ -178,9 +191,24 @@ runtime state, but they must not directly implement project-file changes.
 Workers, reviewers, and validators must be registered in
 `.dispatch/runs/<run-id>/agents/` before their implementation, review, or
 validation output is accepted. Coordinator owns spawn decisions and decides
-worker permission scope through assigned files, allowed write roots, and
-provider-native worker launch options; Dispatch Engine owns the durable
-observability contract for every spawned agent.
+worker permission scope through assigned files, allowed write roots,
+normalized capability profiles, and provider-native worker launch options;
+Dispatch Engine owns the durable observability contract for every spawned
+agent.
+
+Capability profiles make non-file authority auditable without pretending to be
+a provider-independent sandbox. Omitted workstream profiles normalize to
+`worker-standard`; registered reviewers and validators default to
+`reviewer-standard` and `validator-standard`. Profiles cover `network_access`,
+`package_install`, `dependency_resolution`, `docker_socket`, `service_start`,
+`test_execution`, `runtime_state_write`, and `github_issue_create`, with repo
+write scope embedded as assigned files and allowed write roots. Agent prompts
+render the grant, reports declare `capabilities_exercised` and
+`capability_escalations`, and `status --json` exposes `capability_profiles`
+with active grants, high-risk modes, pending escalation decisions, and
+violations. Provider-native enforcement remains provider-specific; Dispatch
+Engine owns the durable state, prompt, report, status, and protocol violation
+contract.
 
 Runtime prompt templates live under `references/prompts/`. Runtime modules
 should load and render those templates instead of embedding prompt text inline.
@@ -210,13 +238,15 @@ necessary.
 - Respect target repository conventions instead of prescribing a universal spec format.
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
-- Use the runtime for explicit plan import, foreground or detached coordinator launch, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
+- Use the runtime for explicit plan import, foreground or detached coordinator launch, user-requested cancellation, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
 - Treat host heartbeat/wakeup automation as the required observation trigger for proactive chat updates after interactive detached launches; Dispatch Engine writes queryable state but does not wake or message the chat directly.
 - Keep autonomous technical decision eligibility in outer interactive Codex and heartbeat guidance. Runtime only validates supplied metadata, appends records to `decisions.jsonl`, emits normal decision events, and surfaces `status --json` summaries.
 - Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `supervisors/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.
-- Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` to keep status resumable from files instead of chat memory.
+- Use lifecycle events such as `coordinator.started`, `coordinator.completed`, `coordinator.failed`, `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, `protocol.violation`, `capability.profile.granted`, `capability.escalation.requested`, `capability.escalation.resolved`, `capability.violation`, `run.cancel.requested`, `run.cancel.signal`, and `run.cancel.completed` to keep status resumable from files instead of chat memory.
 - Keep runtime prompt templates centralized in `references/prompts/`.
 - Treat worker output as valid only when a registered worker has a durable report under `.dispatch/runs/<run-id>/reports/`; reviewer evidence belongs under `reviews/`, validator evidence belongs under `validation/`, and missing or malformed evidence is a protocol violation.
+- Treat capability overreach in agent reports as a protocol violation unless the exercised capability links to a recorded decision id.
+- Validator report statuses are `passed`, `failed`, `blocked`, and `skipped`; validators should not write `completed`, and `status --json` reports schema repair actions when validator evidence needs field-level fixes.
 - Treat coordinator-spawned and adapter-spawned agents the same for registration, prompt snapshots, reports, logs, status, heartbeats, events, and violations.
 - Support pluggable adapters for worker agents, reviewer agents, validation runners, and status sinks.
 - Keep the runnable runtime bundled inside the skill directory before recommending copy/clone installation.

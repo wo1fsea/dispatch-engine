@@ -150,7 +150,17 @@ Runtime may conservatively report mechanical issues:
 - illegal report status values
 - validator reports missing command, output summary, artifacts, or a specific
   skip reason
+- validator reports with identity mismatches, invalid field types, malformed
+  JSON, or evidence that contradicts `passed` or compatibility-normalized
+  status
 - unresolved blockers and pending decisions
+
+Validator report statuses are `passed`, `failed`, `blocked`, and `skipped`.
+Validators should not write `completed`; runtime accepts it only as a version 1
+compatibility alias for `passed` when complete successful evidence is present.
+Useful optional validator evidence includes `validated_agent_id`,
+`validation[]`, `scope_check`, `risks`, and `completed_at`, but non-skipped
+reports still need aggregate `command`, `output_summary`, and `artifacts`.
 
 Runtime must not decide whether a finding is correct, whether validation is
 sufficient, whether residual risk is acceptable, or whether a blocked

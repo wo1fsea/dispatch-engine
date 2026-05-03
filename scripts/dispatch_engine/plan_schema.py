@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .agents import AgentValidationError, normalize_capability_profile
 from .events import append_event, utc_timestamp
 from .runs import initialize_run_dir, new_run_id, plans_dir, run_dir
 
@@ -67,6 +68,8 @@ def validate_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
                 )
 
     _validate_parallel_overlaps(workstreams, dependencies)
+    for workstream in workstreams:
+        _normalize_workstream_capability_profile(workstream)
     return plan
 
 
@@ -174,10 +177,40 @@ def _planned_workstream(workstream: dict[str, Any], timestamp: str) -> dict[str,
     planned = dict(workstream)
     planned.setdefault("depends_on", [])
     planned.setdefault("files", [])
+    _normalize_workstream_capability_profile(planned)
     planned["status"] = "planned"
     planned["created_at"] = timestamp
     planned["updated_at"] = timestamp
     return planned
+
+
+def _normalize_workstream_capability_profile(workstream: dict[str, Any]) -> None:
+    try:
+        workstream["capability_profile"] = normalize_capability_profile(
+            workstream.get("capability_profile"),
+            role="worker",
+            assigned_files=_string_list(workstream.get("files", []), field="files", workstream=workstream),
+            allowed_write_roots=_string_list(
+                workstream.get("allowed_write_roots", []),
+                field="allowed_write_roots",
+                workstream=workstream,
+            ),
+            validation_commands=_string_list(
+                workstream.get("validation", []),
+                field="validation",
+                workstream=workstream,
+            ),
+        )
+    except AgentValidationError as exc:
+        raise PlanValidationError(f"workstream {workstream.get('id')} capability_profile invalid: {exc}") from exc
+
+
+def _string_list(value: Any, *, field: str, workstream: dict[str, Any]) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise PlanValidationError(f"workstream {workstream.get('id')} {field} must be a list")
+    return [str(item) for item in value]
 
 
 def _planned_decision(decision: dict[str, Any], timestamp: str) -> dict[str, Any]:

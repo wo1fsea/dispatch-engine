@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from . import __version__
+from .cancel import cancel_run
 from .coordinators import CoordinatorLaunchError, launch_run_coordinator, render_run_dry_run
 from .decisions import (
     AUTONOMOUS_TECHNICAL_ACTOR,
@@ -58,6 +59,20 @@ def build_parser() -> argparse.ArgumentParser:
     alerts_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     alerts_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
     _add_json_flag(alerts_parser)
+
+    for command, help_text in (
+        ("cancel", "Cancel an active Dispatch Engine run."),
+        ("stop", "Alias for cancel."),
+    ):
+        cancel_parser = subparsers.add_parser(command, help=help_text)
+        cancel_parser.add_argument("target", help="Repository path containing .dispatch state.")
+        cancel_parser.add_argument("--run-id", help="Cancel a specific run id instead of the latest run.")
+        cancel_parser.add_argument(
+            "--reason",
+            default=None,
+            help="Cancellation reason to record in durable run state.",
+        )
+        _add_json_flag(cancel_parser)
 
     resolve_parser = subparsers.add_parser("resolve-decision", help="Resolve a pending Dispatch Engine decision.")
     resolve_parser.add_argument("target", help="Repository path containing .dispatch state.")
@@ -147,6 +162,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "alerts":
         result = run_alerts(Path(args.target), run_id=args.run_id)
+        return _print(result, args.json)
+
+    if args.command in {"cancel", "stop"}:
+        result = cancel_run(Path(args.target), run_id=args.run_id, reason=args.reason)
         return _print(result, args.json)
 
     if args.command == "resolve-decision":
@@ -304,6 +323,12 @@ def _print(payload: dict, as_json: bool) -> int:
         print(f"Prompt: {payload['prompt_path']}")
         print(f"Stdout: {payload['stdout_path']}")
         print(f"Stderr: {payload['stderr_path']}")
+        return 0
+
+    if kind == "run_cancel":
+        print(f"Cancelled run: {payload['run_id']}")
+        print(f"State: {payload['state_dir']}")
+        print(f"Reason: {payload['reason']}")
         return 0
 
     if "version" in payload:

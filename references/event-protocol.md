@@ -61,6 +61,8 @@ The latest run is the lexicographically last directory under `.dispatch/runs/`.
 - `status`: imported run status, currently `planned` before live coordinator work starts
 - `created_at`
 - `updated_at`
+- `cancelled_at`, `cancelled_by`, and `cancellation_reason` when status is
+  `cancelled`
 - `workstreams`: summary objects for each planned workstream
 - `decisions`: pending decision objects, or an empty list
 - `plan`: imported plan metadata when available, including `plan_id`, `schema_version`, `source_path`, `created_by`, `created_at`, and `target_repo`
@@ -229,6 +231,26 @@ Optional fields:
 - Includes `workstream` when the decision applies to a workstream.
 - Payload includes `decision_id`, `question`, and optional `reason`.
 
+`run.cancel.requested`
+
+- Written when interactive Codex requests user-driven run cancellation.
+- Payload includes `run_id`, `reason`, `requested_by`, and `selected_by`
+  (`latest` or `explicit`).
+
+`run.cancel.signal`
+
+- Written for each supervisor/coordinator process signal attempt, including
+  missing-pid observations.
+- Payload includes `target`, `agent_id`, `pid`, `graceful_signal`,
+  `graceful_sent`, `escalation_signal`, `escalated`, and `final_state`.
+
+`run.cancel.completed`
+
+- Written after durable cancellation state is recorded, or after an
+  already-cancelled run returns idempotent success.
+- Payload includes `run_id`, `reason`, `updated_agents`, `signals`, and
+  `already_cancelled`.
+
 `workstream.scheduled`
 
 - Reserved for a coordinator or adapter marking a workstream ready for a worker.
@@ -293,6 +315,14 @@ does not launch a provider process and writes no project-file changes. The
 coordinator prompt states the coordinator-only boundary and the requirement to
 register workers, reviewers, and validators in `agents/`.
 
+`python3 scripts/de.py cancel <repo> --run-id <run-id> --reason <text> --json`
+records user-requested terminal cancellation. When `--run-id` is omitted, it
+selects the latest run. `python3 scripts/de.py stop <repo>` is an alias.
+Cancellation preserves all `.dispatch/` evidence, attempts graceful process
+termination before escalation, marks active run/supervisor/agent state
+`cancelled`, preserves already-terminal agent records, and emits
+`run.cancel.requested`, `run.cancel.signal`, and `run.cancel.completed`.
+
 ## CLI Readers
 
 - `python3 scripts/de.py status <repo>` reads the latest run summary.
@@ -304,9 +334,12 @@ register workers, reviewers, and validators in `agents/`.
 - `python3 scripts/de.py run <repo> --dry-run` renders the latest run's default Codex coordinator launch without state writes.
 - `python3 scripts/de.py run <repo> --run-id <run-id> --provider codex --dry-run` renders an explicit Codex coordinator launch without state writes.
 - `python3 scripts/de.py run <repo> --run-id <run-id> --provider claude --dry-run` renders an explicit Claude coordinator launch without state writes.
+- `python3 scripts/de.py cancel <repo> --run-id <run-id> --reason <text> --json` cancels a selected or latest active run.
+- `python3 scripts/de.py stop <repo> --run-id <run-id> --reason <text> --json` is an alias for `cancel`.
 - `python3 scripts/de.py tail <repo>` prints events from the latest run.
 - `python3 scripts/de.py tail <repo> --run-id <run-id>` prints events from a selected run.
 
-`run`, `status`, and `tail` support `--json`. `status --json` includes
+`run`, `cancel`, `stop`, `status`, and `tail` support `--json`. `status --json` includes
 structured `agents`, `agent_counts`, `workstream_assignments`,
-`heartbeat_summary`, and `protocol_violations`.
+`heartbeat_summary`, `protocol_violations`, and cancellation metadata when a
+run is cancelled.

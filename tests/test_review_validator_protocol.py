@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,10 @@ from dispatch_engine.prompts import (
     render_validator_prompt,
     write_agent_prompt_snapshot,
 )
+from dispatch_engine.state import run_status
+
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "validator_reports"
 
 
 class ReviewValidatorProtocolTests(unittest.TestCase):
@@ -81,6 +86,201 @@ class ReviewValidatorProtocolTests(unittest.TestCase):
 
             self.assertEqual([item["violation"] for item in violations], ["missing_validation_evidence"])
             self.assertEqual(violations[0]["details"]["missing_fields"], ["artifacts", "output_summary"])
+
+    def test_missing_validator_report_uses_report_schema_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(state_dir)
+
+            violations = validate_review_validator_report(state_dir, "validator-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["missing_validator_report"])
+            self.assertEqual(
+                violations[0]["details"]["report_path"],
+                f".dispatch/runs/{state_dir.name}/validation/validator-001.json",
+            )
+
+    def test_malformed_validator_json_uses_specific_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(state_dir)
+            _validator_report_path(state_dir, "validator-001").write_text("{not-json", encoding="utf-8")
+
+            violations = validate_review_validator_report(state_dir, "validator-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["malformed_validator_json"])
+            self.assertEqual(violations[0]["details"]["field"], "$")
+
+    def test_validator_missing_required_fields_uses_specific_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(state_dir)
+            report = _validator_report(status="passed")
+            report.pop("summary")
+            write_validator_report(state_dir, "validator-001", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["missing_validator_fields"])
+            self.assertEqual(violations[0]["details"]["missing_fields"], ["summary"])
+
+    def test_validator_invalid_field_type_uses_specific_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(state_dir)
+            report = _validator_report(status="passed")
+            report["artifacts"] = ".dispatch/runs/run-001/validation/validator-001.stdout.log"
+            write_validator_report(state_dir, "validator-001", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["invalid_validator_field_type"])
+            self.assertEqual(violations[0]["details"]["field"], "artifacts")
+            self.assertEqual(violations[0]["details"]["actual"], "str")
+            self.assertEqual(violations[0]["details"]["expected"], "array")
+
+    def test_validator_identity_mismatch_uses_specific_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(state_dir)
+            report = _validator_report(status="passed")
+            report["agent_id"] = "validator-999"
+            write_validator_report(state_dir, "validator-001", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["validator_identity_mismatch"])
+            self.assertEqual(violations[0]["details"]["field"], "agent_id")
+            self.assertEqual(violations[0]["details"]["actual"], "validator-999")
+            self.assertEqual(violations[0]["details"]["expected"], "validator-001")
+
+    def test_useful_completed_validator_fixture_is_accepted_as_compatibility_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(
+                state_dir,
+                agent_id="validator-010",
+                workstream="04-cli-run-loop-validation",
+            )
+            _copy_validator_fixture(state_dir, "validator-010", "validator-010-useful-completed.json")
+
+            self.assertEqual(validate_review_validator_report(state_dir, "validator-010"), [])
+            self.assertEqual(detect_protocol_violations(state_dir), [])
+
+    def test_completed_validator_with_failed_structured_evidence_reports_inconsistent_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(
+                state_dir,
+                agent_id="validator-010",
+                workstream="04-cli-run-loop-validation",
+            )
+            report = _load_validator_fixture("validator-010-useful-completed.json")
+            report["validation"][0]["status"] = "failed"
+            report["validation"][0]["evidence"] = "Unit tests failed."
+            write_validator_report(state_dir, "validator-010", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-010")
+
+            self.assertEqual([item["violation"] for item in violations], ["inconsistent_validation_evidence"])
+            self.assertEqual(violations[0]["details"]["field"], "validation[0].status")
+            self.assertEqual(violations[0]["details"]["actual"], "failed")
+            self.assertEqual(violations[0]["details"]["suggested_status"], "failed")
+
+    def test_passed_validator_with_failed_structured_evidence_reports_inconsistent_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(
+                state_dir,
+                agent_id="validator-010",
+                workstream="04-cli-run-loop-validation",
+            )
+            report = _load_validator_fixture("validator-010-useful-completed.json")
+            report["status"] = "passed"
+            report["validation"][0]["status"] = "failed"
+            write_validator_report(state_dir, "validator-010", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-010")
+
+            self.assertEqual([item["violation"] for item in violations], ["inconsistent_validation_evidence"])
+            self.assertEqual(violations[0]["details"]["field"], "validation[0].status")
+            self.assertEqual(violations[0]["details"]["suggested_status"], "failed")
+
+    def test_validator_with_unknown_status_reports_invalid_status_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(
+                state_dir,
+                agent_id="validator-010",
+                workstream="04-cli-run-loop-validation",
+            )
+            report = _load_validator_fixture("validator-010-useful-completed.json")
+            report["status"] = "complete"
+            write_validator_report(state_dir, "validator-010", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-010")
+
+            self.assertEqual([item["violation"] for item in violations], ["invalid_validator_status"])
+            self.assertEqual(violations[0]["details"]["field"], "status")
+            self.assertEqual(violations[0]["details"]["actual"], "complete")
+            self.assertEqual(violations[0]["details"]["allowed"], ["passed", "failed", "blocked", "skipped"])
+            self.assertEqual(violations[0]["details"]["suggested_status"], "passed")
+
+    def test_validator_missing_aggregate_evidence_reports_exact_schema_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(
+                state_dir,
+                agent_id="validator-010",
+                workstream="04-cli-run-loop-validation",
+            )
+            report = _load_validator_fixture("validator-010-useful-completed.json")
+            report.pop("output_summary")
+            write_validator_report(state_dir, "validator-010", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-010")
+
+            self.assertEqual([item["violation"] for item in violations], ["missing_validation_evidence"])
+            self.assertEqual(violations[0]["details"]["missing_fields"], ["output_summary"])
+            self.assertEqual(violations[0]["details"]["evidence_mode"], "non_skipped_validator")
+
+    def test_validator_report_schema_failures_get_specific_status_next_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(
+                state_dir,
+                agent_id="validator-010",
+                workstream="04-cli-run-loop-validation",
+            )
+            report = _load_validator_fixture("validator-010-useful-completed.json")
+            report["status"] = "complete"
+            write_validator_report(state_dir, "validator-010", report)
+
+            status = run_status(repo)
+
+            self.assertIn(
+                {
+                    "type": "repair_report_schema",
+                    "agent_id": "validator-010",
+                    "role": "validator",
+                    "report_path": f".dispatch/runs/{state_dir.name}/validation/validator-010.json",
+                    "diagnostic": "invalid_validator_status",
+                    "suggested_status": "passed",
+                },
+                status["next_actions"],
+            )
+            self.assertNotIn({"type": "repair_protocol_violations", "count": 1}, status["next_actions"])
 
     def test_completed_reviewer_without_report_is_status_violation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -149,17 +349,22 @@ def _register_reviewer(state_dir: Path) -> dict:
     )
 
 
-def _register_validator(state_dir: Path) -> dict:
+def _register_validator(
+    state_dir: Path,
+    *,
+    agent_id: str = "validator-001",
+    workstream: str = "01-review-validation",
+) -> dict:
     return register_agent(
         state_dir,
-        agent_id="validator-001",
+        agent_id=agent_id,
         role="validator",
         provider="claude",
         profile="claude-p",
         status="completed",
-        workstream="01-review-validation",
+        workstream=workstream,
         allowed_write_roots=[],
-        prompt_path=f".dispatch/runs/{state_dir.name}/prompts/validator-001.md",
+        prompt_path=f".dispatch/runs/{state_dir.name}/prompts/{agent_id}.md",
     )
 
 
@@ -199,6 +404,22 @@ def _import_plan(repo: Path) -> Path:
     plan_path.parent.mkdir(parents=True)
     plan_path.write_text(json.dumps(_plan()) + "\n", encoding="utf-8")
     return Path(import_dispatch_plan(repo, plan_path)["state_dir"])
+
+
+def _load_validator_fixture(name: str) -> dict:
+    return json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
+
+
+def _copy_validator_fixture(state_dir: Path, agent_id: str, name: str) -> None:
+    destination = state_dir / "validation" / f"{agent_id}.json"
+    destination.parent.mkdir(exist_ok=True)
+    shutil.copyfile(FIXTURES_DIR / name, destination)
+
+
+def _validator_report_path(state_dir: Path, agent_id: str) -> Path:
+    path = state_dir / "validation" / f"{agent_id}.json"
+    path.parent.mkdir(exist_ok=True)
+    return path
 
 
 def _plan() -> dict:

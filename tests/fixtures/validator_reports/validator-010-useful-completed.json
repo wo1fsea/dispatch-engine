@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "agent_id": "validator-010",
+  "role": "validator",
+  "workstream": "04-cli-run-loop-validation",
+  "validated_agent_id": "worker-013",
+  "status": "completed",
+  "summary": "Validated CLI run loop behavior and report evidence.",
+  "command": "PYTHONPATH=scripts python3 -m unittest discover -s tests",
+  "output_summary": "All focused and full regression tests passed.",
+  "validation": [
+    {
+      "command": "PYTHONPATH=scripts python3 -m unittest tests.test_status_tail",
+      "status": "passed",
+      "evidence": "Ran status tail tests successfully."
+    },
+    {
+      "command": "python3 scripts/de.py status --help",
+      "status": "passed",
+      "evidence": "Status command help rendered successfully."
+    }
+  ],
+  "scope_check": {
+    "status": "passed",
+    "violations": [],
+    "changed_files": [
+      "scripts/dispatch_engine/state.py",
+      "tests/test_status_tail.py"
+    ],
+    "allowed_write_roots": [
+      "scripts/dispatch_engine/",
+      "tests/"
+    ]
+  },
+  "artifacts": [
+    ".dispatch/runs/20260502T091041837644Z/validation/validator-010.stdout.log"
+  ],
+  "risks": [
+    "Compatibility normalization should remain limited to complete successful evidence."
+  ],
+  "not_run_reason": "",
+  "completed_at": "2026-05-02T09:12:01Z"
+}

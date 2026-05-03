@@ -33,6 +33,16 @@ Validation expected by the plan:
 
 {validation}
 
+## Capability Profile
+
+```json
+{capability_profile}
+```
+
+Stop before using a denied capability or a mode broader than this profile. Record
+the required capability, requested mode, reason, risk, and proposed validation
+as a blocker or decision request before continuing.
+
 Worker report available so far:
 
 ```json
@@ -66,7 +76,10 @@ Write a JSON report to `{report_path}` with this shape:
   "risks": [],
   "requested_changes": [],
   "validation_gaps": [],
-  "recommendation": "continue"
+  "recommendation": "continue",
+  "capability_profile_id": "reviewer-standard",
+  "capabilities_exercised": [],
+  "capability_escalations": []
 }}
 ```
 

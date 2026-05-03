@@ -40,7 +40,14 @@ progress or asks for decisions.
 10. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
 11. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
 12. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files.
-13. Resolve decisions explicitly after user approval, using `resolve-decision`.
+13. If the user asks to stop a run, call
+    `python3 scripts/de.py cancel <repo> --run-id <run-id> --reason "<reason>" --json`.
+    The `stop` command is an alias for natural-language use, while `cancel`
+    remains canonical. Cancellation is terminal but distinct from failure,
+    preserves `.dispatch/` evidence, and should be followed by `status --json`,
+    `events --since`, and `alerts --json` before reporting the reason once and
+    stopping the heartbeat.
+14. Resolve decisions explicitly after user approval, using `resolve-decision`.
     Technical decisions may be resolved autonomously only after four
     consecutive unanswered heartbeat checks. Use `resolve-decision
     --autonomous-technical --unanswered-heartbeats <count>
@@ -49,8 +56,8 @@ progress or asks for decisions.
     source-of-truth record to `decisions.jsonl`, validates only metadata
     invariants, and exposes a convenience `status --json`
     `autonomous_decisions` summary.
-14. Report validation evidence, residual risk, and all autonomous technical choices made during the run.
-15. If Dispatch Engine itself creates a framework problem or process blocker,
+15. Report validation evidence, residual risk, and all autonomous technical choices made during the run.
+16. If Dispatch Engine itself creates a framework problem or process blocker,
     proactively file or prepare a GitHub issue against
     `https://github.com/wo1fsea/dispatch-engine/issues` using
     `references/issue-reporting-protocol.md`.
@@ -64,7 +71,8 @@ Engine can keep writing state in the background, but interactive Codex only
 interprets that state after a user message or a host wakeup such as a thread
 heartbeat automation. For interactive detached runs, that heartbeat is a
 required supervision companion and must be stopped when the run reaches a
-terminal state.
+terminal state. A cancelled run should be reported once with its cancellation
+reason from `status --json` before the heartbeat is stopped.
 
 If host wakeups are unavailable, use this wording:
 

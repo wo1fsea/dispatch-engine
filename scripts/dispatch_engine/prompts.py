@@ -64,6 +64,7 @@ def render_worker_prompt(
         workstream_scope=workstream.get("scope", "(none)"),
         assigned_files=_render_list(agent.get("assigned_files", [])),
         allowed_write_roots=_render_list(agent.get("allowed_write_roots", [])),
+        capability_profile=_render_capability_profile(agent.get("capability_profile")),
         depends_on=_render_list(workstream.get("depends_on", [])),
         validation=_render_list(workstream.get("validation", [])),
         report_path=agent.get(
@@ -98,6 +99,7 @@ def render_reviewer_prompt(
         workstream_scope=workstream.get("scope", "(none)"),
         assigned_files=_render_list(agent.get("assigned_files", [])),
         allowed_write_roots=_render_list(agent.get("allowed_write_roots", [])),
+        capability_profile=_render_capability_profile(agent.get("capability_profile")),
         validation=_render_list(workstream.get("validation", [])),
         worker_report=_render_json(worker_report or {}),
         report_path=agent.get(
@@ -130,6 +132,7 @@ def render_validator_prompt(
         workstream_id=workstream.get("id", agent.get("workstream", "(unknown)")),
         workstream_title=workstream.get("title", workstream.get("id", "(unknown)")),
         workstream_scope=workstream.get("scope", "(none)"),
+        capability_profile=_render_capability_profile(agent.get("capability_profile")),
         validation=_render_list(workstream.get("validation", [])),
         review_report=_render_json(review_report or {}),
         report_path=agent.get(
@@ -223,6 +226,12 @@ def _render_json(data: dict[str, Any]) -> str:
     if not data:
         return "{}"
     return json.dumps(data, indent=2, sort_keys=True)
+
+
+def _render_capability_profile(profile: Any) -> str:
+    if not isinstance(profile, dict):
+        return "{}"
+    return json.dumps({"capability_profile": profile}, indent=2, sort_keys=True)
 
 
 def _agent_prompt_path(run_state_dir: Path, agent: dict[str, Any]) -> Path:

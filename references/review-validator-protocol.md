@@ -23,6 +23,10 @@ The coordinator may spawn reviewers and validators through provider-native
 mechanisms. Dispatch Engine does not launch them in this RFC. Their output is
 valid evidence only after the agent is registered under
 `.dispatch/runs/<run-id>/agents/` and a mechanically valid report is written.
+Reviewer and validator records also carry normalized capability profiles:
+`reviewer-standard` and `validator-standard` when omitted. They are expected to
+remain read-only against project files unless the granted profile or a recorded
+decision expands scope.
 
 ## Report Locations
 
@@ -52,6 +56,9 @@ Reviewer reports include:
 - `requested_changes`
 - `validation_gaps`
 - `recommendation`
+- `capability_profile_id`
+- `capabilities_exercised`
+- `capability_escalations`
 
 Reviewer reports are acceptance evidence, not automated final acceptance. A
 reviewer may recommend continuation, changes, blocking, or escalation. The
@@ -74,20 +81,47 @@ Validator reports include:
 - `output_summary`
 - `artifacts`
 - `not_run_reason`
+- `capability_profile_id`
+- `capabilities_exercised`
+- `capability_escalations`
 
 For `passed`, `failed`, or `blocked`, a validator report must include command
 evidence, output summary, and at least one artifact reference. For `skipped`,
 it must include a specific not-run reason.
+
+Validators must not use `status: "completed"` for new reports. Version 1
+runtime validation accepts that value only as a narrow compatibility alias for
+`passed` when the report identity matches, aggregate evidence is complete,
+every structured `validation[]` item is passed or skipped with evidence, and
+`scope_check` has no failures or violations.
+
+Optional structured evidence may include:
+
+- `validated_agent_id`: worker or reviewer id being validated
+- `validation[]`: check objects with `command`, `status`, and `evidence`
+- `scope_check`: status, violations, changed files, and allowed write roots
+- `risks`
+- `completed_at`
+
+Structured evidence supplements the aggregate `command`, `output_summary`, and
+`artifacts` fields; it does not replace them for non-skipped reports.
 
 ## Protocol Violations
 
 Runtime may emit conservative violations for mechanical problems:
 
 - missing reviewer or validator report for a completed registered agent
-- malformed reviewer or validator report
-- illegal reviewer or validator status
-- validator report missing required evidence
+- malformed reviewer report
+- validator report JSON that cannot be parsed
+- missing validator fields, invalid field types, identity mismatch, or illegal validator status
+- validator report missing required command, output, artifact, or skip evidence
+- validator report evidence that contradicts a passed or compatibility-normalized status
+- reported capability use that exceeds the granted profile without a decision id
 - workstream marked accepted, implemented, or completed without registered evidence
+
+For validator report schema failures, `status --json` may include
+`next_actions[]` items with `type: "repair_report_schema"`, the validator
+`agent_id`, `report_path`, diagnostic code, and any suggested canonical status.
 
 Runtime must not decide whether a review finding is correct, whether a command
 is sufficient for acceptance, or whether a residual risk is acceptable.

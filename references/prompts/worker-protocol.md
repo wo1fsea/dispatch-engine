@@ -37,6 +37,16 @@ Validation:
 
 {validation}
 
+## Capability Profile
+
+```json
+{capability_profile}
+```
+
+Stop before using a denied capability or a mode broader than this profile. Record
+the required capability, requested mode, reason, risk, and proposed validation
+as a blocker or decision request before continuing.
+
 ## Collaboration Constraints
 
 - You are a registered worker for exactly one workstream.
@@ -69,7 +79,10 @@ Write a JSON report to `{report_path}` with this shape:
   ],
   "questions": [],
   "blockers": [],
-  "risks": []
+  "risks": [],
+  "capability_profile_id": "worker-standard",
+  "capabilities_exercised": [],
+  "capability_escalations": []
 }}
 ```
 

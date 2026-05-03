@@ -7,7 +7,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .agents import detect_protocol_violations, list_agents
+from .agents import (
+    VALIDATOR_REPORT_SCHEMA_VIOLATIONS,
+    capability_profile_high_risk_grants,
+    detect_protocol_violations,
+    list_agents,
+)
 from .decisions import (
     list_autonomous_decisions,
     list_pending_decisions,
@@ -19,7 +24,8 @@ from .runs import resolve_run_dir
 from .supervisor import read_supervisors
 
 TERMINAL_AGENT_STATUSES = frozenset({"completed", "failed", "cancelled"})
-MATERIAL_STATUSES = frozenset({"completed", "failed", "blocked"})
+TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
+MATERIAL_STATUSES = frozenset({"completed", "failed", "blocked", "cancelled"})
 
 
 def latest_run_summary(target: Path) -> dict:
@@ -57,6 +63,7 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
     events = read_events(selected / "events.jsonl")
     agent_summary = _agent_observability(selected, workstreams, events)
     next_actions = _next_actions(
+        run_status=data.get("status"),
         pending_decision_records=pending_decision_records,
         unresolved_blockers=unresolved_blockers,
         protocol_violations=agent_summary["protocol_violations"],
@@ -75,6 +82,7 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
         "run_id": data.get("run_id"),
         "objective": data.get("objective"),
         "run_status": data.get("status"),
+        "cancellation": _cancellation_summary(data),
         "workstream_counts": counts,
         "pending_decisions": pending_decisions,
         "unresolved_blockers": len(unresolved_blockers),
@@ -223,6 +231,11 @@ def _agent_observability(
             "by_status": dict(Counter(item.get("status", "unknown") for item in supervisors)),
         },
         "protocol_violations": protocol_violations,
+        "capability_profiles": _capability_profile_summary(
+            run_state_dir,
+            agents,
+            protocol_violations.get("detected", []),
+        ),
     }
 
 
@@ -250,11 +263,15 @@ def _autonomous_decision_summary(run_state_dir: Path) -> dict[str, Any]:
 
 def _next_actions(
     *,
+    run_status: str | None = None,
     pending_decision_records: list[dict[str, Any]],
     unresolved_blockers: list[dict[str, Any]],
     protocol_violations: dict[str, Any],
     agents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if run_status in TERMINAL_RUN_STATUSES:
+        return []
+
     actions: list[dict[str, Any]] = []
     for decision in sorted(pending_decision_records, key=lambda item: _record_id(item, "decision_id")):
         action: dict[str, Any] = {
@@ -279,8 +296,15 @@ def _next_actions(
         )
 
     violation_count = protocol_violations.get("count", 0)
+    report_schema_actions = _report_schema_repair_actions(
+        protocol_violations.get("detected", []),
+        agents,
+    )
+    actions.extend(report_schema_actions)
     if violation_count:
-        actions.append({"type": "repair_protocol_violations", "count": violation_count})
+        fallback_count = max(violation_count - len(report_schema_actions), 0)
+        if fallback_count:
+            actions.append({"type": "repair_protocol_violations", "count": fallback_count})
 
     failed_agents = sorted(
         agent.get("agent_id", "")
@@ -297,6 +321,47 @@ def _next_actions(
         )
 
     return actions
+
+
+def _report_schema_repair_actions(
+    detected_violations: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    agent_by_id = {
+        agent.get("agent_id"): agent
+        for agent in agents
+        if agent.get("agent_id")
+    }
+    actions: list[dict[str, Any]] = []
+    for violation in detected_violations:
+        diagnostic = violation.get("violation")
+        if diagnostic not in VALIDATOR_REPORT_SCHEMA_VIOLATIONS:
+            continue
+        agent_id = violation.get("agent_id")
+        details = violation.get("details", {})
+        agent = agent_by_id.get(agent_id, {})
+        action: dict[str, Any] = {
+            "type": "repair_report_schema",
+            "agent_id": agent_id,
+            "role": agent.get("role") or details.get("role") or "validator",
+            "report_path": details.get("report_path"),
+            "diagnostic": diagnostic,
+        }
+        suggested_status = details.get("suggested_status")
+        if suggested_status:
+            action["suggested_status"] = suggested_status
+        actions.append(action)
+    return actions
+
+
+def _cancellation_summary(run: dict[str, Any]) -> dict[str, Any] | None:
+    if run.get("status") != "cancelled" and "cancellation_reason" not in run:
+        return None
+    return {
+        "reason": run.get("cancellation_reason"),
+        "cancelled_at": run.get("cancelled_at"),
+        "cancelled_by": run.get("cancelled_by"),
+    }
 
 
 def _first_coordinator(agents: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -333,6 +398,122 @@ def _heartbeat_summary(agents: list[dict[str, Any]]) -> dict[str, int]:
         "with_heartbeat": with_heartbeat,
         "missing_heartbeat": len(agents) - with_heartbeat,
     }
+
+
+def _capability_profile_summary(
+    run_state_dir: Path,
+    agents: list[dict[str, Any]],
+    protocol_violations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    agent_records = []
+    pending_escalations = _pending_capability_escalations(run_state_dir, agents)
+    escalations_by_agent: dict[str, list[dict[str, Any]]] = {}
+    for escalation in pending_escalations:
+        agent_id = escalation.get("agent_id")
+        if agent_id:
+            escalations_by_agent.setdefault(agent_id, []).append(escalation)
+
+    for agent in sorted(agents, key=lambda item: item.get("agent_id", "")):
+        profile = agent.get("capability_profile")
+        if not isinstance(profile, dict):
+            continue
+        agent_id = str(agent.get("agent_id") or "")
+        agent_records.append(
+            {
+                "agent_id": agent_id,
+                "role": agent.get("role"),
+                "status": agent.get("status"),
+                "workstream": agent.get("workstream"),
+                "profile_id": profile.get("profile_id"),
+                "high_risk_capabilities": capability_profile_high_risk_grants(profile),
+                "pending_escalations": escalations_by_agent.get(agent_id, []),
+            }
+        )
+
+    pending_decisions = []
+    for decision in list_pending_decisions(run_state_dir):
+        capability = decision.get("capability")
+        requested_mode = decision.get("requested_mode")
+        if not capability:
+            escalation = decision.get("capability_escalation")
+            if isinstance(escalation, dict):
+                capability = escalation.get("capability")
+                requested_mode = escalation.get("requested_mode")
+        if not capability:
+            continue
+        record = {
+            "decision_id": _record_id(decision, "decision_id"),
+            "capability": capability,
+            "requested_mode": requested_mode,
+        }
+        if decision.get("workstream"):
+            record["workstream"] = decision["workstream"]
+        pending_decisions.append(record)
+
+    capability_violations = [
+        violation
+        for violation in protocol_violations
+        if violation.get("violation") == "capability_overreach"
+    ]
+    return {
+        "agents": agent_records,
+        "pending_decisions": sorted(
+            pending_decisions,
+            key=lambda item: (str(item.get("decision_id")), str(item.get("capability"))),
+        ),
+        "pending_escalations": sorted(
+            pending_escalations,
+            key=lambda item: (str(item.get("agent_id")), str(item.get("capability"))),
+        ),
+        "violations": capability_violations,
+    }
+
+
+def _pending_capability_escalations(
+    run_state_dir: Path,
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    escalations: list[dict[str, Any]] = []
+    for agent in agents:
+        report = _read_agent_report(run_state_dir, agent)
+        if not isinstance(report, dict):
+            continue
+        for item in report.get("capability_escalations", []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("status") not in {"blocked", "pending", "requested"}:
+                continue
+            record = {
+                "agent_id": agent.get("agent_id"),
+                "workstream": agent.get("workstream"),
+                "capability": item.get("capability"),
+                "requested_mode": item.get("requested_mode"),
+                "status": item.get("status"),
+            }
+            if item.get("decision_id"):
+                record["decision_id"] = item["decision_id"]
+            if item.get("reason"):
+                record["reason"] = item["reason"]
+            escalations.append(record)
+    return escalations
+
+
+def _read_agent_report(run_state_dir: Path, agent: dict[str, Any]) -> dict[str, Any] | None:
+    report_path = agent.get("report_path")
+    prefix = f".dispatch/runs/{run_state_dir.name}/"
+    path: Path
+    if isinstance(report_path, str) and report_path.startswith(prefix):
+        path = run_state_dir / report_path.removeprefix(prefix)
+    else:
+        role = agent.get("role")
+        directory = {"reviewer": "reviews", "validator": "validation"}.get(str(role), "reports")
+        path = run_state_dir / directory / f"{agent.get('agent_id')}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
 
 
 def _workstream_progress(
@@ -442,7 +623,11 @@ def _material_alerts(
 
     run_status = run.get("status")
     if run_status in MATERIAL_STATUSES:
-        alerts.append({"type": f"run_{run_status}", "run_id": run_id, "status": run_status})
+        alert = {"type": f"run_{run_status}", "run_id": run_id, "status": run_status}
+        if run_status == "cancelled":
+            alert["reason"] = run.get("cancellation_reason")
+            alert["cancelled_at"] = run.get("cancelled_at")
+        alerts.append(alert)
 
     for workstream in sorted(run.get("workstreams", []), key=lambda item: item.get("id", "")):
         workstream_status = workstream.get("status")

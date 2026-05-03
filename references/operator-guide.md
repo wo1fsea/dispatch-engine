@@ -139,7 +139,7 @@ See `references/heartbeat-observation.md` for the required heartbeat lifecycle,
 recommended intervals, the heartbeat prompt shape, material-change rules, and
 fallback wording when wakeups are unavailable.
 
-The provider process launched by `de run` is a coordinator only. It may plan, dispatch, monitor, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`, but it must not directly implement project-file changes. Project implementation belongs to registered workers, reviewers, or validators using provider-native spawn mechanisms and the shared `.dispatch/` observability contract.
+The provider process launched by `de run` is a coordinator only. It may plan, dispatch, monitor, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`, but it must not directly implement project-file changes. Project implementation belongs to registered workers, reviewers, or validators using provider-native spawn mechanisms, normalized capability profiles, and the shared `.dispatch/` observability contract.
 
 ## Watching Progress
 
@@ -154,6 +154,7 @@ python3 "$DE_SKILL/scripts/de.py" status "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" events "$TARGET" --since <event-id> --json
 python3 "$DE_SKILL/scripts/de.py" alerts "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
+python3 "$DE_SKILL/scripts/de.py" cancel "$TARGET" --run-id <run-id> --reason "<reason>" --json
 ```
 
 `status --json` is the primary summary surface for Codex. Heartbeat checks can
@@ -179,6 +180,16 @@ metadata; `decisions.jsonl` remains the durable audit source, while
 `status --json` `autonomous_decisions` is a convenience summary for heartbeat
 checks and final reports.
 
+`status --json` also includes `capability_profiles`: registered agent grants,
+high-risk modes, pending capability decisions or escalations, and capability
+violations. Treat provider-native enforcement as advisory and provider-specific;
+the Dispatch Engine contract is the durable profile, prompt snapshot, report
+fields, and status/alert/event evidence. A report that exercises
+`network_access`, `package_install`, `dependency_resolution`, `docker_socket`,
+`service_start`, `test_execution`, `runtime_state_write`, or
+`github_issue_create` beyond the grant is a protocol violation unless it links
+a decision id.
+
 Runtime state is stored under:
 
 ```text
@@ -195,6 +206,38 @@ Runtime state is stored under:
 .dispatch/runs/<run-id>/logs/
 .dispatch/runs/<run-id>/heartbeats/
 ```
+
+## Cancelling A Run
+
+Use cancellation only after a user asks interactive Codex to stop a run:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" cancel "$TARGET" --run-id <run-id> --reason "<reason>" --json
+```
+
+`--run-id` is optional; when omitted, Dispatch Engine resolves the latest run
+under `.dispatch/runs/`. `--reason` is optional and defaults to a user-requested
+cancellation message. `de stop` accepts the same flags as a natural-language
+alias, but `cancel` is canonical for automation and docs.
+
+Cancellation records a terminal `cancelled` run state, attempts graceful
+process termination before escalation, preserves prompts, logs, reports,
+events, decisions, reviews, validation, and heartbeat evidence, and marks only
+active supervisor/coordinator/worker/reviewer/validator records cancelled with
+the same reason. Completed, failed, and already-cancelled agent records keep
+their terminal status. Completed and failed runs reject cancellation with a
+clear terminal error; already-cancelled runs return idempotent success.
+
+After cancellation, interactive Codex should read:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET" --run-id <run-id> --json
+python3 "$DE_SKILL/scripts/de.py" events "$TARGET" --run-id <run-id> --since <event-id> --json
+python3 "$DE_SKILL/scripts/de.py" alerts "$TARGET" --run-id <run-id> --json
+```
+
+Then report the cancelled terminal state and reason once, and stop any
+host-layer heartbeat for the run.
 
 Live coordinator launches write:
 
@@ -223,7 +266,10 @@ Accepted project changes belong in normal source, test, docs, spec, or configura
 - `run --dry-run` fails with missing run: import a plan first, or pass `--run-id <run-id>` for an existing run.
 - `run` fails because `codex` is unavailable: install or configure the Codex CLI, or use `--provider claude` when the Claude CLI is intentionally available.
 - `run --provider claude` fails because `claude` is unavailable: install/configure Claude CLI or use the default Codex provider.
+- `cancel` reports `no_run` or `missing_run`: import or select an existing run before cancelling.
+- `cancel` reports `run_already_terminal`: completed and failed runs cannot be cancelled; already-cancelled runs return idempotent success.
 - Progress looks stale: check `status`, then `tail`, then inspect `.dispatch/runs/<run-id>/logs/` and `.dispatch/runs/<run-id>/events.jsonl`.
+- A capability escalation is pending: read `status --json` `capability_profiles.pending_decisions` and `.pending_escalations`, then resolve the linked decision or narrow/reassign the workstream.
 - Host wakeups are unavailable: tell the user, "This host cannot create the required Dispatch Engine heartbeat for this thread. The detached run would still write queryable state under `.dispatch/`, but this chat would not be proactively supervised. Please confirm whether to continue without proactive observation or switch to a foreground/debug run."
 - A coordinator edited project files directly: treat that as a protocol violation. Reassign implementation to registered workers/reviewers/validators and keep coordinator output as orchestration evidence only.
 - Dispatch Engine itself blocks or misguides the workflow: follow `references/issue-reporting-protocol.md` and proactively file or prepare a GitHub issue against `https://github.com/wo1fsea/dispatch-engine/issues`.
@@ -236,6 +282,8 @@ From the installed skill root:
 python3 scripts/de.py --help
 python3 scripts/de.py events --help
 python3 scripts/de.py alerts --help
+python3 scripts/de.py cancel --help
+python3 scripts/de.py stop --help
 python3 scripts/de.py resolve-decision --help
 python3 scripts/de.py run --help
 python3 scripts/de.py version

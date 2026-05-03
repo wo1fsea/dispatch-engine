@@ -24,7 +24,7 @@ Objective: {objective}
 - You may spawn workers, reviewers, or validators using provider-native mechanisms when the imported plan and current run state make that appropriate.
 - You decide each worker, reviewer, or validator permission scope through
   assigned files, allowed write roots, validation expectations, and
-  provider-native launch options.
+  capability profiles plus provider-native launch options.
 - You may write Dispatch Engine runtime state only under `.dispatch/`.
 - Do not directly modify project files to satisfy the objective.
 - Project implementation must be done by a registered worker, reviewer, or validator before their output is treated as valid.
@@ -51,9 +51,19 @@ Objective: {objective}
 
 - Before assigning work, register each spawned agent under `{state_dir}/agents/` as a worker, reviewer, or validator.
 - Write the spawned agent prompt snapshot under `{state_dir}/prompts/`.
+- Grant a normalized `capability_profile` to every worker, reviewer, and
+  validator. Omitted worker profiles default to `worker-standard`; reviewers
+  default to `reviewer-standard`; validators default to `validator-standard`.
+- Treat provider-native permission flags as optional enforcement. The Dispatch
+  Engine source of truth is the registered profile, prompt snapshot, report,
+  status, and protocol violation state.
 - Ensure the spawned agent has role-specific evidence, log, status, and heartbeat paths under `{state_dir}/reports/`, `{state_dir}/reviews/`, `{state_dir}/validation/`, `{state_dir}/logs/`, and `{state_dir}/heartbeats/`.
 - Emit and keep current `agent.spawned`, `workstream.assigned`, `agent.heartbeat`, `agent.completed`, `agent.failed`, and `protocol.violation` events.
 - Treat a missing, malformed, stale, or out-of-scope worker report as invalid implementation evidence and record `protocol.violation`.
+- Treat a report that exercises `network_access`, `package_install`,
+  `dependency_resolution`, `docker_socket`, `service_start`, `test_execution`,
+  `runtime_state_write`, or `github_issue_create` beyond the grant as
+  `capability_overreach` unless the report links a decision id.
 - A registered worker receives exactly one workstream at a time and must preserve unrelated user or peer-agent changes.
 
 ## Workstreams

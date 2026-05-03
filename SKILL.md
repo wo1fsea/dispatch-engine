@@ -65,6 +65,8 @@ python scripts/de.py run <repo> --provider claude --dry-run
 python scripts/de.py status <repo>
 python scripts/de.py events <repo> --since event-000001 --json
 python scripts/de.py alerts <repo> --json
+python scripts/de.py cancel <repo> --run-id <run-id> --reason "User asked to stop" --json
+python scripts/de.py stop <repo> --run-id <run-id> --reason "User asked to stop" --json
 python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> --json
 python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> \
   --autonomous-technical --unanswered-heartbeats 4 \
@@ -87,6 +89,14 @@ shape based on
 without starting Codex, Claude, or any other provider process, and without
 writing run state. Dry-run output includes the resolved command, run id, state
 directory, and coordinator prompt marker or preview.
+
+`de cancel <repo>` is the canonical user-requested cancellation control for an
+active run; `de stop <repo>` is a natural-language alias. Both support
+`--run-id`, `--reason`, and `--json`, resolve the latest run by default, attempt
+graceful process termination before escalation, preserve all `.dispatch/`
+evidence, and mark the run plus active supervisor/coordinator/agent records
+`cancelled` with the cancellation reason. Cancellation is distinct from
+failure, and already-cancelled runs return idempotent success.
 
 Detached execution does not make the foreground chat automatically aware of
 background changes. For every interactive `de run --detach` launch, interactive
@@ -125,7 +135,8 @@ in runtime modules. Coordinator prompts are rendered from
 and passed to provider CLIs through a short prompt-file instruction.
 Worker prompts are rendered from `references/prompts/worker-protocol.md` and
 must carry the repo, run id, state directory, assigned workstream, assigned
-files, allowed write roots, validation expectations, and report path.
+files, allowed write roots, granted capability profile, validation
+expectations, escalation rules, and report path.
 
 ## Operating Flow
 
@@ -140,7 +151,13 @@ files, allowed write roots, validation expectations, and report path.
 9. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
 10. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
 11. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.
-12. Resolve pending decisions explicitly after user approval with
+12. If the user asks to stop a run, call
+    `python scripts/de.py cancel <repo> --run-id <run-id> --reason "<user-facing reason>" --json`,
+    then read `status --json`, `events --since`, and `alerts --json` before
+    summarizing the terminal cancelled state. Use `stop` only as an alias when
+    natural language makes it clearer; keep `cancel` canonical in docs and
+    automation.
+13. Resolve pending decisions explicitly after user approval with
     `resolve-decision`. If the same technical decision remains unresolved after
     four consecutive heartbeat checks, interactive Codex plus the heartbeat
     owns the eligibility judgment and may choose a conservative, reversible
@@ -149,8 +166,8 @@ files, allowed write roots, validation expectations, and report path.
     actor to `interactive-codex-autonomous`, appends the source-of-truth record
     to `.dispatch/runs/<run-id>/decisions.jsonl`, and exposes a convenience
     `status --json` `autonomous_decisions` summary.
-13. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
-14. When this skill, `de`, the coordinator protocol, heartbeat guidance,
+14. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
+15. When this skill, `de`, the coordinator protocol, heartbeat guidance,
     status/alert/event surfaces, prompt templates, or any Dispatch
     Engine-owned process creates a framework problem or process blocker, follow
     `references/issue-reporting-protocol.md` and proactively file or prepare a
@@ -165,11 +182,11 @@ dispatch, monitor, review, summarize, request decisions, and write Dispatch
 Engine runtime state under `.dispatch/`; it must not directly implement
 project-file changes. Project implementation belongs to registered workers,
 reviewers, or validators. Coordinator owns spawn decisions and decides worker
-permission scope through assigned files, allowed write roots, and
-provider-native worker launch options. Dispatch Engine owns the durable
-observability contract. Coordinators may use provider-native spawn mechanisms
-for workers, reviewers, and validators, but every spawned agent must be visible
-through the same `.dispatch/` files.
+permission scope through assigned files, allowed write roots, normalized
+capability profiles, and provider-native worker launch options. Dispatch
+Engine owns the durable observability contract. Coordinators may use
+provider-native spawn mechanisms for workers, reviewers, and validators, but
+every spawned agent must be visible through the same `.dispatch/` files.
 
 Workers, reviewers, and validators must be registered before their output is
 treated as valid. Worker output requires a durable JSON report under
@@ -177,7 +194,9 @@ treated as valid. Worker output requires a durable JSON report under
 under `.dispatch/runs/<run-id>/reviews/<agent-id>.json`; validator evidence
 belongs under `.dispatch/runs/<run-id>/validation/<agent-id>.json`. Missing
 reports, malformed reports, or worker changed files outside the assigned files
-and allowed write roots are protocol violations. Prompt snapshots, reports,
+and allowed write roots are protocol violations. Validator report statuses are
+`passed`, `failed`, `blocked`, and `skipped`; do not use `completed` for
+validator report status. Prompt snapshots, reports,
 logs, status records, and heartbeats for spawned agents live under:
 
 ```text
@@ -191,15 +210,32 @@ logs, status records, and heartbeats for spawned agents live under:
 .dispatch/runs/<run-id>/heartbeats/
 ```
 
+Every workstream and spawned agent carries a normalized `capability_profile`.
+Omitted worker profiles default to `worker-standard`; reviewers default to
+`reviewer-standard`; validators default to `validator-standard`. The initial
+capability vocabulary is `network_access`, `package_install`,
+`dependency_resolution`, `docker_socket`, `service_start`, `test_execution`,
+`runtime_state_write`, and `github_issue_create`. Provider enforcement remains
+provider-specific; Dispatch Engine owns the auditable state, prompt, report,
+status, and protocol-violation contract. Agent reports may include
+`capabilities_exercised` and `capability_escalations`; capability use beyond
+the grant is `capability_overreach` unless the exercised item links a recorded
+decision id.
+
 Live `de run` registers `coordinator-001` with status `running`, then updates it
 to `completed` or `failed` when the provider process exits. `de status` reads
 these files to report coordinator provider/profile/status, agent counts by role
 and status, active assignments, heartbeat counts, pending decisions,
-autonomous decision summaries, and protocol violations. Lifecycle events include
+autonomous decision summaries, capability profile summaries, and protocol
+violations. Lifecycle events include
 `coordinator.started`,
 `coordinator.completed`, `coordinator.failed`, `agent.spawned`,
 `agent.heartbeat`, `workstream.assigned`, `agent.completed`, `agent.failed`,
-`protocol.violation`, and `decision.requested`.
+`protocol.violation`, `capability.profile.granted`,
+`capability.escalation.requested`, `capability.escalation.resolved`,
+`capability.violation`,
+`decision.requested`, `run.cancel.requested`, `run.cancel.signal`, and
+`run.cancel.completed`.
 
 ## Packaging Rule
 
@@ -226,6 +262,7 @@ repo.
 - Read `references/issue-reporting-protocol.md` when any Dispatch Engine framework, skill, runtime, protocol, prompt, status, heartbeat, or process blocker issue appears during use.
 - Read `specs/rfc-0015-codex-heartbeat-observation/` when changing detached-run observation, heartbeat wakeup guidance, Codex-facing status/actions, or decision-resolution surfaces.
 - Read `specs/rfc-0016-autonomous-decision-records/` when changing autonomous technical-decision records, `resolve-decision --autonomous-technical`, or `status --json` autonomous decision summaries.
+- Read `specs/rfc-0018-agent-capability-profiles/` when changing workstream or agent capability profiles, profile prompt rendering, capability escalation, overreach diagnostics, or `status --json` `capability_profiles`.
 - Read `references/event-protocol.md` when changing run-state or event-log behavior.
 - Read `references/worker-protocol.md` when changing worker or reviewer adapters.
 - Read `references/orchestrator-loop.md` when designing coordinator-spawned worker, reviewer, validator, evidence, and status/tail flows.

@@ -219,6 +219,106 @@ def protocol_violation(
     )
 
 
+def capability_profile_granted(
+    event_log: Path,
+    *,
+    agent_id: str,
+    role: str,
+    profile_id: str,
+    source: str,
+    workstream: str | None = None,
+    actor: str = "dispatch-engine",
+) -> None:
+    append_event(
+        event_log,
+        "capability.profile.granted",
+        actor=actor,
+        workstream=workstream,
+        payload={
+            "agent_id": agent_id,
+            "role": role,
+            "profile_id": profile_id,
+            "source": source,
+        },
+    )
+
+
+def capability_escalation_requested(
+    event_log: Path,
+    *,
+    agent_id: str,
+    capability: str,
+    requested_mode: str,
+    decision_id: str | None = None,
+    workstream: str | None = None,
+    actor: str = "dispatch-engine",
+) -> None:
+    payload = {
+        "agent_id": agent_id,
+        "capability": capability,
+        "requested_mode": requested_mode,
+    }
+    if decision_id:
+        payload["decision_id"] = decision_id
+    append_event(
+        event_log,
+        "capability.escalation.requested",
+        actor=actor,
+        workstream=workstream,
+        payload=payload,
+    )
+
+
+def capability_escalation_resolved(
+    event_log: Path,
+    *,
+    agent_id: str,
+    capability: str,
+    requested_mode: str,
+    decision_id: str,
+    resolution: str,
+    workstream: str | None = None,
+    actor: str = "dispatch-engine",
+) -> None:
+    append_event(
+        event_log,
+        "capability.escalation.resolved",
+        actor=actor,
+        workstream=workstream,
+        payload={
+            "agent_id": agent_id,
+            "capability": capability,
+            "requested_mode": requested_mode,
+            "decision_id": decision_id,
+            "resolution": resolution,
+        },
+    )
+
+
+def capability_violation(
+    event_log: Path,
+    *,
+    agent_id: str,
+    capability: str,
+    requested_mode: str,
+    granted_mode: str | None,
+    workstream: str | None = None,
+    actor: str = "dispatch-engine",
+) -> None:
+    append_event(
+        event_log,
+        "capability.violation",
+        actor=actor,
+        workstream=workstream,
+        payload={
+            "agent_id": agent_id,
+            "capability": capability,
+            "requested_mode": requested_mode,
+            "granted_mode": granted_mode,
+        },
+    )
+
+
 def decision_requested(
     event_log: Path,
     *,
@@ -238,6 +338,63 @@ def decision_requested(
         workstream=workstream,
         payload=payload,
     )
+
+
+def run_cancel_requested(
+    event_log: Path,
+    *,
+    run_id: str,
+    reason: str,
+    selected_by: str,
+    actor: str = "interactive-codex",
+) -> str:
+    append_event(
+        event_log,
+        "run.cancel.requested",
+        actor=actor,
+        payload={
+            "run_id": run_id,
+            "reason": reason,
+            "requested_by": actor,
+            "selected_by": selected_by,
+        },
+    )
+    return "run.cancel.requested"
+
+
+def run_cancel_signal(
+    event_log: Path,
+    *,
+    signal: dict[str, Any],
+    actor: str = "interactive-codex",
+) -> str:
+    append_event(event_log, "run.cancel.signal", actor=actor, payload=dict(signal))
+    return "run.cancel.signal"
+
+
+def run_cancel_completed(
+    event_log: Path,
+    *,
+    run_id: str,
+    reason: str,
+    updated_agents: list[str],
+    signals: list[dict[str, Any]],
+    already_cancelled: bool,
+    actor: str = "interactive-codex",
+) -> str:
+    append_event(
+        event_log,
+        "run.cancel.completed",
+        actor=actor,
+        payload={
+            "run_id": run_id,
+            "reason": reason,
+            "updated_agents": updated_agents,
+            "signals": signals,
+            "already_cancelled": already_cancelled,
+        },
+    )
+    return "run.cancel.completed"
 
 
 def read_events(event_log: Path) -> list[dict[str, Any]]:
