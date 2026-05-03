@@ -27,7 +27,7 @@ class DetachedCoordinatorSupervisionTests(unittest.TestCase):
             run = _import_plan(repo, plan_id="plan-001", objective="detached objective")
             bin_dir = root / "bin"
             record_dir = root / "records"
-            _write_slow_fake_provider(bin_dir, "codex", exit_code=0, sleep_seconds=0.8)
+            _write_slow_fake_provider(bin_dir, "codex", exit_code=0, sleep_seconds=1.5)
 
             started_at = time.monotonic()
             with _fake_provider_env(bin_dir, record_dir):
@@ -36,7 +36,7 @@ class DetachedCoordinatorSupervisionTests(unittest.TestCase):
 
             state_dir = Path(run["state_dir"])
             self.assertEqual(result["kind"], "run_detached")
-            self.assertLess(elapsed, 0.5)
+            self.assertLess(elapsed, 1.0)
             self.assertTrue((state_dir / "supervisors" / "coordinator-001.json").is_file())
 
             final_status = _wait_for_coordinator_status(repo, run["run_id"], "completed")
@@ -59,7 +59,7 @@ class DetachedCoordinatorSupervisionTests(unittest.TestCase):
             run = _import_plan(repo, plan_id="plan-001", objective="cli detach objective")
             bin_dir = root / "bin"
             record_dir = root / "records"
-            _write_slow_fake_provider(bin_dir, "codex", exit_code=0, sleep_seconds=0.8)
+            _write_slow_fake_provider(bin_dir, "codex", exit_code=0, sleep_seconds=1.5)
 
             stdout = io.StringIO()
             started_at = time.monotonic()
@@ -71,7 +71,7 @@ class DetachedCoordinatorSupervisionTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(payload["kind"], "run_detached")
             self.assertEqual(payload["provider"], "codex")
-            self.assertLess(elapsed, 0.5)
+            self.assertLess(elapsed, 1.0)
 
             final_status = _wait_for_coordinator_status(repo, run["run_id"], "completed")
             self.assertEqual(final_status["supervisor_counts"]["by_status"], {"completed": 1})
@@ -97,8 +97,8 @@ def _write_slow_fake_provider(
     sleep_seconds: float,
 ) -> None:
     bin_dir.mkdir(exist_ok=True)
-    path = bin_dir / name
-    path.write_text(
+    script_path = bin_dir / f"{name}.py" if os.name == "nt" else bin_dir / name
+    script_path.write_text(
         textwrap.dedent(
             f"""\
             #!{sys.executable}
@@ -120,7 +120,14 @@ def _write_slow_fake_provider(
         ),
         encoding="utf-8",
     )
-    path.chmod(0o755)
+    if os.name == "nt":
+        wrapper_path = bin_dir / f"{name}.cmd"
+        wrapper_path.write_text(
+            f'@echo off\r\n"{sys.executable}" "%~dp0{name}.py" %*\r\nexit /b %ERRORLEVEL%\r\n',
+            encoding="utf-8",
+        )
+    else:
+        script_path.chmod(0o755)
 
 
 @contextlib.contextmanager

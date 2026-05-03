@@ -61,7 +61,8 @@ class RunDryRunTests(unittest.TestCase):
         template_path = prompt_template_path(COORDINATOR_PROTOCOL_TEMPLATE)
 
         self.assertEqual(template_path.name, "coordinator-protocol.md")
-        self.assertIn("references/prompts", str(template_path))
+        self.assertEqual(template_path.parent.name, "prompts")
+        self.assertEqual(template_path.parent.parent.name, "references")
         self.assertIn("Coordinator-Only Behavior", template_path.read_text(encoding="utf-8"))
 
     def test_coordinator_prompt_snapshot_and_provider_instruction_are_centralized(self) -> None:

@@ -200,6 +200,24 @@ class RunCancelControlTests(unittest.TestCase):
             supervisor = _read_json(escalation_state / "supervisors" / "coordinator-001.json")
             self.assertEqual(supervisor["cancel_signal"]["final_state"], "terminated_after_escalation")
 
+    def test_windows_stale_pid_system_error_is_recorded_as_not_running(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            imported = _import_plan(repo, plan_id="plan-windows-stale", objective="windows stale pid objective")
+            state_dir = Path(imported["state_dir"])
+            _write_supervisor(state_dir, status="running", supervisor_pid=333)
+
+            from dispatch_engine.cancel import cancel_run
+
+            with patch("dispatch_engine.cancel.os.kill", side_effect=SystemError("stale Windows pid state")):
+                payload = cancel_run(repo, run_id=imported["run_id"], reason="Cancel stale pid.", grace_seconds=0)
+
+            self.assertEqual(payload["kind"], "run_cancel")
+            self.assertEqual(payload["status"], "cancelled")
+            self.assertEqual(payload["signals"][0]["final_state"], "not_running")
+            supervisor = _read_json(state_dir / "supervisors" / "coordinator-001.json")
+            self.assertEqual(supervisor["cancel_signal"]["final_state"], "not_running")
+
 
 class _FakeProcessController:
     graceful_signal_name = "SIGTERM"

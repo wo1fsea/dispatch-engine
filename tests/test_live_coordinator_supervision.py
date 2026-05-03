@@ -45,6 +45,8 @@ class LiveCoordinatorSupervisionTests(unittest.TestCase):
             self.assertNotEqual(result["run_id"], first["run_id"])
             self.assertEqual(result["state_dir"], str(state_dir))
             self.assertEqual(result["exit_code"], 0)
+            self.assertEqual(result["argv"][0], "codex")
+            self.assertEqual(Path(result["executable_path"]).resolve(), _fake_provider_executable(bin_dir, "codex").resolve())
             self.assertEqual(result["prompt_path"], str(prompt_path))
             self.assertEqual(result["stdout_path"], str(stdout_path))
             self.assertEqual(result["stderr_path"], str(stderr_path))
@@ -182,8 +184,8 @@ class LiveCoordinatorSupervisionTests(unittest.TestCase):
 
 def _write_fake_provider(bin_dir: Path, name: str, *, exit_code: int) -> None:
     bin_dir.mkdir(exist_ok=True)
-    path = bin_dir / name
-    path.write_text(
+    script_path = bin_dir / f"{name}.py" if os.name == "nt" else bin_dir / name
+    script_path.write_text(
         textwrap.dedent(
             f"""\
             #!{sys.executable}
@@ -204,7 +206,18 @@ def _write_fake_provider(bin_dir: Path, name: str, *, exit_code: int) -> None:
         ),
         encoding="utf-8",
     )
-    path.chmod(0o755)
+    if os.name == "nt":
+        wrapper_path = _fake_provider_executable(bin_dir, name)
+        wrapper_path.write_text(
+            f'@echo off\r\n"{sys.executable}" "%~dp0{name}.py" %*\r\nexit /b %ERRORLEVEL%\r\n',
+            encoding="utf-8",
+        )
+    else:
+        script_path.chmod(0o755)
+
+
+def _fake_provider_executable(bin_dir: Path, name: str) -> Path:
+    return bin_dir / f"{name}.cmd" if os.name == "nt" else bin_dir / name
 
 
 @contextlib.contextmanager
