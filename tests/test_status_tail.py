@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dispatch_engine.agents import register_agent, register_worker_agent
 from dispatch_engine.cli import main
-from dispatch_engine.events import protocol_violation
+from dispatch_engine.events import append_event, protocol_violation
 from dispatch_engine.plan_schema import import_dispatch_plan
 from dispatch_engine.state import run_alerts, run_status, tail_events
 
@@ -276,6 +276,34 @@ class StatusTailTests(unittest.TestCase):
                 ["missing_agent_launch_evidence"],
             )
             self.assertEqual(status["lifecycle_diagnostics"][0]["agent_id"], "worker-001")
+            self.assertEqual(
+                status["lifecycle_diagnostics"][0]["accepted_evidence_fields"],
+                [
+                    "provider_native_agent_id",
+                    "provider_native_spawn_ref",
+                    "launch_evidence.spawn_agent_id",
+                    "launch_evidence.provider_native_spawn_ref",
+                    "provider_launch.evidence.provider_native_spawn_ref",
+                    "pid",
+                    "stdout_path",
+                    "stderr_path",
+                ],
+            )
+            self.assertEqual(
+                status["lifecycle_diagnostics"][0]["missing_evidence_fields"],
+                [
+                    "provider_native_agent_id",
+                    "provider_native_spawn_ref",
+                    "launch_evidence.spawn_agent_id",
+                    "launch_evidence.provider_native_spawn_ref",
+                    "provider_launch.evidence.provider_native_spawn_ref",
+                    "pid",
+                ],
+            )
+            self.assertEqual(
+                status["lifecycle_diagnostics"][0]["missing_file_evidence_fields"],
+                ["stdout_path", "stderr_path"],
+            )
             self.assertIn(
                 "missing_agent_launch_evidence",
                 [alert["type"] for alert in alerts["alerts"]],
@@ -303,6 +331,113 @@ class StatusTailTests(unittest.TestCase):
             stdout_path = state_dir / "logs" / "worker-001.stdout.log"
             stdout_path.parent.mkdir(parents=True, exist_ok=True)
             stdout_path.write_text("", encoding="utf-8")
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertEqual(status["lifecycle_diagnostics"], [])
+
+    def test_provider_native_launch_evidence_fields_prevent_missing_launch_diagnostic(self) -> None:
+        evidence_cases = [
+            {"provider_native_agent_id": "spawn-agent-001"},
+            {"provider_native_spawn_ref": "spawn-ref-001"},
+            {"launch_evidence": {"spawn_agent_id": "spawn-agent-002"}},
+            {"launch_evidence": {"provider_native_spawn_ref": "spawn-ref-002"}},
+            {"provider_launch": {"evidence": {"provider_native_spawn_ref": "spawn-ref-003"}}},
+        ]
+        for evidence in evidence_cases:
+            with self.subTest(evidence=evidence):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    plan = _import_plan(repo, objective="provider launch evidence objective")
+                    state_dir = Path(plan["state_dir"])
+                    register_worker_agent(
+                        state_dir,
+                        agent_id="worker-001",
+                        provider="codex",
+                        profile="codex-exec",
+                        status="running",
+                        workstream="01-status-tail",
+                        assigned_files=["scripts/dispatch_engine/state.py"],
+                        allowed_write_roots=[],
+                    )
+                    _update_agent(state_dir, "worker-001", evidence)
+                    _write_report(state_dir, "worker-001")
+
+                    status = run_status(repo, run_id=plan["run_id"])
+
+                    self.assertNotIn(
+                        "missing_agent_launch_evidence",
+                        [item["type"] for item in status["lifecycle_diagnostics"]],
+                    )
+
+    def test_active_provider_native_agent_without_report_after_staleness_surfaces_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="provider no report objective")
+            state_dir = Path(plan["state_dir"])
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                status="running",
+                workstream="01-status-tail",
+                assigned_files=["scripts/dispatch_engine/state.py"],
+                allowed_write_roots=[],
+            )
+            _update_agent(
+                state_dir,
+                "worker-001",
+                {
+                    "provider_native_agent_id": "spawn-agent-001",
+                    "last_heartbeat_at": "2000-01-01T00:00:00Z",
+                },
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            self.assertEqual(
+                [item["type"] for item in status["lifecycle_diagnostics"]],
+                ["provider_native_spawn_without_report"],
+            )
+            diagnostic = status["lifecycle_diagnostics"][0]
+            self.assertEqual(diagnostic["agent_id"], "worker-001")
+            self.assertEqual(diagnostic["evidence_fields"], ["provider_native_agent_id"])
+            self.assertEqual(diagnostic["report_path"], f".dispatch/runs/{state_dir.name}/reports/worker-001.json")
+            self.assertIn("last_heartbeat_at", diagnostic["stale_since_field"])
+            self.assertIn(
+                "provider_native_spawn_without_report",
+                [alert["type"] for alert in alerts["alerts"]],
+            )
+            self.assertIn(
+                "provider_native_spawn_without_report",
+                status["next_actions"][0]["diagnostic_types"],
+            )
+
+    def test_fresh_provider_native_agent_without_report_does_not_surface_no_report_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="fresh provider no report objective")
+            state_dir = Path(plan["state_dir"])
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                status="running",
+                workstream="01-status-tail",
+                assigned_files=["scripts/dispatch_engine/state.py"],
+                allowed_write_roots=[],
+            )
+            _update_agent(
+                state_dir,
+                "worker-001",
+                {
+                    "provider_native_agent_id": "spawn-agent-001",
+                    "last_heartbeat_at": "9999-01-01T00:00:00Z",
+                },
+            )
 
             status = run_status(repo, run_id=plan["run_id"])
 
@@ -340,6 +475,34 @@ class StatusTailTests(unittest.TestCase):
                 [alert["type"] for alert in alerts["alerts"]],
             )
 
+    def test_alerts_normalize_legacy_capability_protocol_violation_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="legacy capability event objective")
+            state_dir = Path(plan["state_dir"])
+            append_event(
+                state_dir / "events.jsonl",
+                "protocol.violation",
+                workstream="01-status-tail",
+                payload={
+                    "agent_id": "worker-001",
+                    "capability": "test_execution",
+                    "requested_mode": "unrestricted",
+                    "granted_mode": "allow-listed",
+                    "evidence": "legacy dogfood payload",
+                },
+            )
+
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            protocol_alerts = [
+                alert for alert in alerts["alerts"] if alert["type"] == "protocol_violation"
+            ]
+            self.assertEqual([alert["violation"] for alert in protocol_alerts], ["capability_overreach"])
+            self.assertEqual(protocol_alerts[0]["agent_id"], "worker-001")
+            self.assertEqual(protocol_alerts[0]["details"]["source"], "legacy_protocol_violation_payload")
+            self.assertEqual(protocol_alerts[0]["details"]["payload"]["capability"], "test_execution")
+
 
 def _import_plan(repo: Path, *, objective: str) -> dict:
     plan_path = repo / ".dispatch" / "plans" / "plan-001.json"
@@ -375,6 +538,19 @@ def _set_run_status(state_dir: Path, status: str) -> None:
     run["status"] = status
     run["updated_at"] = "2026-05-03T00:00:00Z"
     run_path.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _update_agent(state_dir: Path, agent_id: str, fields: dict) -> None:
+    agent_path = state_dir / "agents" / f"{agent_id}.json"
+    agent = json.loads(agent_path.read_text(encoding="utf-8"))
+    agent.update(fields)
+    agent_path.write_text(json.dumps(agent, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_report(state_dir: Path, agent_id: str) -> None:
+    report_path = state_dir / "reports" / f"{agent_id}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text("{}\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

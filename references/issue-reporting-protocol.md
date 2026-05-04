@@ -9,6 +9,10 @@ doc_type: normative
 Use this protocol whenever interactive Codex, a Dispatch Engine coordinator, or
 an operator using `de` finds a Dispatch Engine framework problem.
 
+After an issue exists, use `docs/governance/issue-triage.md` before deciding
+whether it is still accurate, stale, duplicate, ready to implement, or ready to
+close.
+
 ## Project Repository
 
 - GitHub repo: `https://github.com/wo1fsea/dispatch-engine`

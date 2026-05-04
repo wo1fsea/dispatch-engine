@@ -43,6 +43,7 @@ Before giving install or copy guidance, verify the skill root contains `SKILL.md
 | TDD work | `docs/governance/tdd-workflow.md` |
 | Validation or test reporting | `docs/governance/validation-workflow.md` |
 | PR or review prep | `docs/governance/review-workflow.md` |
+| Dispatch Engine GitHub issue triage, dogfood issue accuracy review, or issue closing | `references/issue-reporting-protocol.md`, then `docs/governance/issue-triage.md` |
 | Agent context files | `docs/governance/agent-context.md` |
 | Governance file changes | `docs/governance/governance-maintenance.md` |
 

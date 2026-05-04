@@ -15,3 +15,7 @@ This directory holds the detailed engineering governance workflows.
 Dispatch Engine currently uses a strict governance profile because its core surface includes skill metadata, bundled CLI commands, runtime state, event formats, worker adapters, validation behavior, and agent-facing instructions.
 
 Prefer the smallest workflow that fits the task. Use specs and workstreams for ambiguous, cross-module, contract-affecting, or high-risk changes; keep narrow mechanical changes direct.
+
+For Dispatch Engine GitHub issue triage, dogfood issue accuracy review, or
+issue closing, use `references/issue-reporting-protocol.md` to understand the
+reporting contract, then apply `docs/governance/issue-triage.md`.

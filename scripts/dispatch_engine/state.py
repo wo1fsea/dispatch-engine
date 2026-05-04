@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,20 @@ TERMINAL_AGENT_STATUSES = frozenset({"completed", "completed_with_concerns", "fa
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 MATERIAL_STATUSES = frozenset({"completed", "failed", "blocked", "cancelled"})
 RUNNING_AGENT_STATUSES = frozenset({"registered", "running"})
+PROVIDER_NATIVE_NO_REPORT_STALE_AFTER_SECONDS = 60 * 60
+PROVIDER_NATIVE_LAUNCH_EVIDENCE_FIELDS = (
+    "provider_native_agent_id",
+    "provider_native_spawn_ref",
+    "launch_evidence.spawn_agent_id",
+    "launch_evidence.provider_native_spawn_ref",
+    "provider_launch.evidence.provider_native_spawn_ref",
+)
+LAUNCH_EVIDENCE_FIELDS = (
+    *PROVIDER_NATIVE_LAUNCH_EVIDENCE_FIELDS,
+    "pid",
+    "stdout_path",
+    "stderr_path",
+)
 STDOUT_DECISION_PATTERNS = (
     "i need your decision",
     "decision before proceeding",
@@ -361,6 +376,7 @@ def _next_actions(
         if diagnostic.get("type") in {
             "missing_agent_launch_evidence",
             "orphaned_running_agent",
+            "provider_native_spawn_without_report",
             "stale_detached_supervisor",
             "stdout_only_decision_request",
         }
@@ -466,6 +482,7 @@ def _lifecycle_diagnostics(
     diagnostics: list[dict[str, Any]] = []
     diagnostics.extend(_stale_supervisor_diagnostics(supervisors))
     diagnostics.extend(_missing_launch_evidence_diagnostics(run_state_dir, agents))
+    diagnostics.extend(_provider_native_no_report_diagnostics(run_state_dir, agents))
     diagnostics.extend(_orphaned_running_agent_diagnostics(run, agents, supervisors))
     stdout_diagnostic = _stdout_only_decision_diagnostic(
         run_state_dir,
@@ -488,8 +505,10 @@ def _missing_launch_evidence_diagnostics(
             continue
         if agent.get("status") not in RUNNING_AGENT_STATUSES:
             continue
-        if _has_launch_evidence(run_state_dir, agent):
+        launch_evidence = _launch_evidence_items(run_state_dir, agent)
+        if launch_evidence:
             continue
+        missing_fields, missing_file_fields = _missing_launch_evidence_fields(run_state_dir, agent)
         diagnostics.append(
             {
                 "type": "missing_agent_launch_evidence",
@@ -498,9 +517,12 @@ def _missing_launch_evidence_diagnostics(
                 "role": agent.get("role"),
                 "status": agent.get("status"),
                 "workstream": agent.get("workstream"),
+                "accepted_evidence_fields": list(LAUNCH_EVIDENCE_FIELDS),
+                "missing_evidence_fields": missing_fields,
+                "missing_file_evidence_fields": missing_file_fields,
                 "summary": (
                     f"{agent.get('role')} {agent.get('agent_id')} is {agent.get('status')} "
-                    "but has no provider-native id, pid, stdout path, or stderr path."
+                    "but has no provider-native launch evidence, positive pid, or existing stdout/stderr log file."
                 ),
             }
         )
@@ -508,17 +530,145 @@ def _missing_launch_evidence_diagnostics(
 
 
 def _has_launch_evidence(run_state_dir: Path, agent: dict[str, Any]) -> bool:
-    provider_native_agent_id = agent.get("provider_native_agent_id")
-    if isinstance(provider_native_agent_id, str) and provider_native_agent_id.strip():
-        return True
+    return bool(_launch_evidence_items(run_state_dir, agent))
+
+
+def _launch_evidence_items(run_state_dir: Path, agent: dict[str, Any]) -> list[dict[str, str]]:
+    evidence: list[dict[str, str]] = []
+    for field, value in _provider_native_evidence_values(agent):
+        evidence.append({"field": field, "kind": "provider_native", "value": value})
+
     pid = agent.get("pid")
     if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
-        return True
+        evidence.append({"field": "pid", "kind": "process", "value": str(pid)})
     for field in ("stdout_path", "stderr_path"):
         resolved = _resolve_run_path(run_state_dir, agent.get(field))
         if resolved is not None and resolved.exists():
-            return True
-    return False
+            evidence.append(
+                {
+                    "field": field,
+                    "kind": "file",
+                    "value": _run_relative_existing_path(run_state_dir, resolved),
+                }
+            )
+    return evidence
+
+
+def _provider_native_evidence_values(agent: dict[str, Any]) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    for field in ("provider_native_agent_id", "provider_native_spawn_ref"):
+        value = agent.get(field)
+        if isinstance(value, str) and value.strip():
+            values.append((field, value.strip()))
+
+    launch_evidence = agent.get("launch_evidence")
+    if isinstance(launch_evidence, dict):
+        for field in ("spawn_agent_id", "provider_native_spawn_ref"):
+            value = launch_evidence.get(field)
+            if isinstance(value, str) and value.strip():
+                values.append((f"launch_evidence.{field}", value.strip()))
+
+    provider_launch = agent.get("provider_launch")
+    if isinstance(provider_launch, dict):
+        evidence = provider_launch.get("evidence")
+        if isinstance(evidence, dict):
+            value = evidence.get("provider_native_spawn_ref")
+            if isinstance(value, str) and value.strip():
+                values.append(("provider_launch.evidence.provider_native_spawn_ref", value.strip()))
+    return values
+
+
+def _missing_launch_evidence_fields(
+    run_state_dir: Path,
+    agent: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    missing_fields = []
+    present_provider_fields = {field for field, _value in _provider_native_evidence_values(agent)}
+    for field in PROVIDER_NATIVE_LAUNCH_EVIDENCE_FIELDS:
+        if field not in present_provider_fields:
+            missing_fields.append(field)
+
+    pid = agent.get("pid")
+    if not (isinstance(pid, int) and not isinstance(pid, bool) and pid > 0):
+        missing_fields.append("pid")
+
+    missing_file_fields = []
+    for field in ("stdout_path", "stderr_path"):
+        resolved = _resolve_run_path(run_state_dir, agent.get(field))
+        if resolved is None or not resolved.exists():
+            missing_file_fields.append(field)
+    return missing_fields, missing_file_fields
+
+
+def _provider_native_no_report_diagnostics(
+    run_state_dir: Path,
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    diagnostics = []
+    for agent in agents:
+        if agent.get("role") not in {"worker", "reviewer", "validator"}:
+            continue
+        if agent.get("status") not in RUNNING_AGENT_STATUSES:
+            continue
+        provider_evidence = _provider_native_evidence_values(agent)
+        if not provider_evidence:
+            continue
+        report_path = _agent_report_path(run_state_dir, agent)
+        if report_path.exists():
+            continue
+        stale = _stale_agent_timestamp(agent)
+        if stale is None:
+            continue
+        field, value, age_seconds = stale
+        diagnostics.append(
+            {
+                "type": "provider_native_spawn_without_report",
+                "severity": "material",
+                "agent_id": agent.get("agent_id"),
+                "role": agent.get("role"),
+                "status": agent.get("status"),
+                "workstream": agent.get("workstream"),
+                "report_path": _run_relative_existing_path(run_state_dir, report_path),
+                "evidence_fields": [field for field, _value in provider_evidence],
+                "stale_since_field": field,
+                "stale_since": value,
+                "stale_after_seconds": PROVIDER_NATIVE_NO_REPORT_STALE_AFTER_SECONDS,
+                "age_seconds": age_seconds,
+                "summary": (
+                    f"{agent.get('role')} {agent.get('agent_id')} has provider-native spawn evidence "
+                    f"but no role-specific report after {field} became stale."
+                ),
+            }
+        )
+    return diagnostics
+
+
+def _stale_agent_timestamp(agent: dict[str, Any]) -> tuple[str, str, int] | None:
+    for field in ("last_heartbeat_at", "updated_at", "started_at", "created_at"):
+        value = agent.get(field)
+        if not isinstance(value, str) or not value:
+            continue
+        parsed = _parse_utc_timestamp(value)
+        if parsed is None:
+            continue
+        age_seconds = int((datetime.now(timezone.utc) - parsed).total_seconds())
+        if age_seconds >= PROVIDER_NATIVE_NO_REPORT_STALE_AFTER_SECONDS:
+            return field, value, age_seconds
+        return None
+    return None
+
+
+def _parse_utc_timestamp(value: str) -> datetime | None:
+    normalized = value
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _stale_supervisor_diagnostics(supervisors: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -752,21 +902,26 @@ def _pending_capability_escalations(
 
 
 def _read_agent_report(run_state_dir: Path, agent: dict[str, Any]) -> dict[str, Any] | None:
-    report_path = agent.get("report_path")
-    prefix = f".dispatch/runs/{run_state_dir.name}/"
-    path: Path
-    if isinstance(report_path, str) and report_path.startswith(prefix):
-        path = run_state_dir / report_path.removeprefix(prefix)
-    else:
-        role = agent.get("role")
-        directory = {"reviewer": "reviews", "validator": "validation"}.get(str(role), "reports")
-        path = run_state_dir / directory / f"{agent.get('agent_id')}.json"
+    path = _agent_report_path(run_state_dir, agent)
     if not path.exists():
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
+
+
+def _agent_report_path(run_state_dir: Path, agent: dict[str, Any]) -> Path:
+    report_path = agent.get("report_path")
+    prefix = f".dispatch/runs/{run_state_dir.name}/"
+    if isinstance(report_path, str) and report_path.startswith(prefix):
+        return run_state_dir / report_path.removeprefix(prefix)
+    resolved = _resolve_run_path(run_state_dir, report_path)
+    if resolved is not None:
+        return resolved
+    role = agent.get("role")
+    directory = {"reviewer": "reviews", "validator": "validation"}.get(str(role), "reports")
+    return run_state_dir / directory / f"{agent.get('agent_id')}.json"
 
 
 def _workstream_progress(
@@ -802,13 +957,41 @@ def _protocol_violation_summary(run_state_dir: Path, events: list[dict[str, Any]
 
 def _event_protocol_violation(event: dict[str, Any]) -> dict[str, Any]:
     payload = event.get("payload", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    violation_name = payload.get("violation")
+    details = payload.get("details", {})
+    if not isinstance(details, dict):
+        details = {"details": details}
+    if not isinstance(violation_name, str) or not violation_name:
+        violation_name, details = _normalize_legacy_protocol_violation_payload(payload, details)
     violation = {
-        "violation": payload.get("violation", "unknown"),
-        "details": payload.get("details", {}),
+        "violation": violation_name,
+        "details": details,
     }
+    agent_id = payload.get("agent_id")
+    if isinstance(agent_id, str) and agent_id:
+        violation["agent_id"] = agent_id
     if "workstream" in event:
         violation["workstream"] = event["workstream"]
     return violation
+
+
+def _normalize_legacy_protocol_violation_payload(
+    payload: dict[str, Any],
+    details: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    capability_payload = payload if "capability" in payload else details
+    if "capability" in capability_payload:
+        normalized_details = {
+            "source": "legacy_protocol_violation_payload",
+            "payload": payload,
+        }
+        for field in ("capability", "requested_mode", "granted_mode", "evidence"):
+            if field in capability_payload:
+                normalized_details[field] = capability_payload[field]
+        return "capability_overreach", normalized_details
+    return "unknown", details
 
 
 def _material_alerts(
@@ -891,6 +1074,11 @@ def _material_alerts(
             "reason",
             "stdout_path",
             "matched_text",
+            "report_path",
+            "evidence_fields",
+            "stale_since_field",
+            "stale_since",
+            "stale_after_seconds",
         ):
             if diagnostic.get(field) is not None:
                 alert[field] = diagnostic[field]

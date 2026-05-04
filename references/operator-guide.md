@@ -152,6 +152,14 @@ role-specific report path, and heartbeat evidence. If no launch path works, the
 agent or workstream should be marked `failed` or `blocked` with the reason
 instead of presenting fake running state.
 
+For provider-native spawn, write `provider_native_agent_id` on the agent record
+as the canonical launch evidence field. `status --json` also accepts legacy
+dogfood fields `provider_native_spawn_ref`,
+`launch_evidence.spawn_agent_id`,
+`launch_evidence.provider_native_spawn_ref`, and
+`provider_launch.evidence.provider_native_spawn_ref`. CLI fallback stdout and
+stderr paths count as launch evidence only when the referenced log file exists.
+
 Imported workstreams may include `validation_warnings` when validation commands
 appear inconsistent with the normalized capability profile, such as service
 startup under `service_start: deny` or local HTTP checks under
@@ -207,13 +215,33 @@ fields, and status/alert/event evidence. A report that exercises
 `github_issue_create` beyond the grant is a protocol violation unless it links
 a decision id.
 
+When triaging completion violations, distinguish truly unregistered completion
+from assigned-agent evidence problems. `unregistered_implementation_completion`
+means the completed workstream has no assigned or matching implementation agent.
+`assigned_implementation_agent_missing` means the workstream names an assigned
+agent id with no registry record. `assigned_implementation_agent_invalid_status`
+means the assigned or matching agent record exists but is not in a valid
+completion status. If the assigned agent completed with an invalid report,
+repair the report, scope, or capability diagnostic shown in
+`protocol_violations.detected`.
+
+Historical `protocol.violation` events may predate the current event schema.
+`alerts --json` normalizes capability-shaped legacy payloads that have no
+explicit `violation` into `capability_overreach` alerts and preserves the
+original payload in `details.payload` for audit.
+
 `status --json` also includes `lifecycle_diagnostics` for material supervision
 gaps observed at read time. Treat `missing_agent_launch_evidence`,
-`stale_detached_supervisor`, `orphaned_running_agent`, and
-`stdout_only_decision_request` diagnostics as operator-visible blockers. They
-are also surfaced by `alerts --json`; terminal runs may still have empty
-`next_actions`, so do not use `next_actions` alone to decide that a detached
-run needs no follow-up.
+`provider_native_spawn_without_report`, `stale_detached_supervisor`,
+`orphaned_running_agent`, and `stdout_only_decision_request` diagnostics as
+operator-visible blockers. `provider_native_spawn_without_report` means an
+active provider-native worker, reviewer, or validator has launch evidence but
+no role-specific report after the conservative staleness window; inspect the
+provider session, wait only if progress is visible, mark blocked/failed, repair
+with durable evidence, or cancel after user approval. These diagnostics are
+also surfaced by `alerts --json`; terminal runs may still have empty
+`next_actions`, so do not use `next_actions` alone to decide that a detached run
+needs no follow-up.
 
 Runtime state is stored under:
 
@@ -295,6 +323,7 @@ Accepted project changes belong in normal source, test, docs, spec, or configura
 - `cancel` reports `run_already_terminal`: completed and failed runs cannot be cancelled; already-cancelled runs return idempotent success.
 - Progress looks stale: check `status`, then `tail`, then inspect `.dispatch/runs/<run-id>/logs/` and `.dispatch/runs/<run-id>/events.jsonl`.
 - A capability escalation is pending: read `status --json` `capability_profiles.pending_decisions` and `.pending_escalations`, then resolve the linked decision or narrow/reassign the workstream.
+- A protocol alert says `capability_overreach` with `details.source` set to `legacy_protocol_violation_payload`: inspect `details.payload`; the run file was not rewritten, but the alert has been normalized for triage.
 - Host wakeups are unavailable: tell the user, "This host cannot create the required Dispatch Engine heartbeat for this thread. The detached run would still write queryable state under `.dispatch/`, but this chat would not be proactively supervised. Please confirm whether to continue without proactive observation or switch to a foreground/debug run."
 - A coordinator edited project files directly: treat that as a protocol violation. Reassign implementation to registered workers/reviewers/validators and keep coordinator output as orchestration evidence only.
 - Dispatch Engine itself blocks or misguides the workflow: follow `references/issue-reporting-protocol.md` and proactively file or prepare a GitHub issue against `https://github.com/wo1fsea/dispatch-engine/issues`.

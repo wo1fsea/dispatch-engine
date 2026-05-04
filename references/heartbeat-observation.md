@@ -38,8 +38,9 @@ After every successful interactive `de run <repo> --detach` launch:
    delete, or otherwise stop the heartbeat.
 6. Before stopping a heartbeat for a terminal run, check `status --json`
    `lifecycle_diagnostics` and `alerts --json`. Orphaned running agents, stale
-   detached supervisors, and stdout-only decision requests are material even
-   when terminal `next_actions` is empty.
+   detached supervisors, provider-native active agents without role-specific
+   reports, and stdout-only decision requests are material even when terminal
+   `next_actions` is empty.
 7. Track pending technical decisions across heartbeat wakeups. If the same
    technical decision is still unresolved after four consecutive heartbeat
    checks, apply the autonomous technical-decision rule below.
@@ -121,6 +122,8 @@ Report only material changes:
 - stdout appears to request a user decision but no pending decision record or
   `decision.requested` event exists
 - a worker, reviewer, or validator is running without launch evidence
+- a provider-native spawned worker, reviewer, or validator remains active
+  without a role-specific report after the staleness window
 - a detached supervisor is stale, or a terminal coordinator/run has orphaned
   still-running worker, reviewer, or validator agents
 - new protocol violation needs repair

@@ -213,7 +213,47 @@ class WorkerAdapterProtocolTests(unittest.TestCase):
             violations = detect_protocol_violations(state_dir)
 
             self.assertIn("missing_worker_report", [item["violation"] for item in violations])
-            self.assertIn("unregistered_implementation_completion", [item["violation"] for item in violations])
+            self.assertNotIn("unregistered_implementation_completion", [item["violation"] for item in violations])
+
+    def test_completed_workstream_with_failed_assigned_agent_has_targeted_violation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="worker-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="01-worker-protocol",
+                assigned_files=["scripts/dispatch_engine/agents.py"],
+                allowed_write_roots=[],
+                status="running",
+            )
+            fail_worker(state_dir, "worker-001", reason="fixture failure")
+            _mark_workstream_completed(state_dir, assigned_agent="worker-001")
+
+            violations = detect_protocol_violations(state_dir)
+
+            self.assertEqual(
+                [item["violation"] for item in violations],
+                ["assigned_implementation_agent_invalid_status"],
+            )
+            self.assertEqual(violations[0]["agent_id"], "worker-001")
+            self.assertEqual(violations[0]["details"]["agent_status"], "failed")
+
+    def test_completed_workstream_with_missing_assigned_agent_has_targeted_violation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _mark_workstream_completed(state_dir, assigned_agent="worker-999")
+
+            violations = detect_protocol_violations(state_dir)
+
+            self.assertEqual(
+                [item["violation"] for item in violations],
+                ["assigned_implementation_agent_missing"],
+            )
+            self.assertEqual(violations[0]["details"]["assigned_agent"], "worker-999")
 
     def test_malformed_and_out_of_scope_worker_reports_are_detected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -534,10 +574,12 @@ def _worker_report(
     }
 
 
-def _mark_workstream_completed(state_dir: Path) -> None:
+def _mark_workstream_completed(state_dir: Path, *, assigned_agent: str | None = None) -> None:
     path = state_dir / "workstreams" / "01-worker-protocol.json"
     workstream = json.loads(path.read_text(encoding="utf-8"))
     workstream["status"] = "completed"
+    if assigned_agent is not None:
+        workstream["assigned_agent"] = assigned_agent
     path.write_text(json.dumps(workstream, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

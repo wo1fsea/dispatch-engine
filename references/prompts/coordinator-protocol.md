@@ -58,13 +58,24 @@ Objective: {objective}
   assignment as active until there has been a provider-native spawn attempt or
   a codex CLI fallback launch attempt for that exact agent.
 - Before marking an agent `running`, record durable launch evidence: prompt
-  snapshot path, provider command or provider-native spawn reference,
-  stdout/stderr log paths when a CLI fallback is used, report/review/validation
-  output path, and heartbeat path or initial heartbeat evidence.
+  snapshot path, `provider_native_agent_id` when provider-native spawn
+  succeeds, stdout/stderr log paths when a CLI fallback is used,
+  report/review/validation output path, and heartbeat path or initial heartbeat
+  evidence. `provider_native_agent_id` is the canonical provider-native launch
+  field; status readers also recognize legacy `provider_native_spawn_ref`,
+  `launch_evidence.spawn_agent_id`,
+  `launch_evidence.provider_native_spawn_ref`, and
+  `provider_launch.evidence.provider_native_spawn_ref` fields from dogfood
+  runs.
 - If provider-native spawn is unavailable, unsupported, or fails, either try
   the explicit codex CLI fallback and record its logs, or mark the agent
   `failed`/`blocked` with the reason. Never fake `running` from registration
   alone.
+- If a provider-native spawned worker, reviewer, or validator stays active
+  without its role-specific report after the heartbeat/staleness window, status
+  and alerts surface `provider_native_spawn_without_report`; inspect the
+  provider session, wait only if it is still making progress, or mark the agent
+  blocked/failed, repair with durable evidence, or cancel after user approval.
 - If a worker, reviewer, or validator report is missing or malformed, use a
   recorded repair helper or repair worker with its own prompt/report evidence.
   Do not hand-edit the report into shape without a durable repair record.

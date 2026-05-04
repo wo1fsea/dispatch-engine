@@ -111,6 +111,15 @@ PID is reported as `stale` in the status-time view without rewriting the source
 JSON. Related `lifecycle_diagnostics` and `alerts --json` entries are material
 operator signals.
 
+`status --json` also detects protocol violations at read time from current
+agent, report, and workstream state. These detected diagnostics are distinct
+from historical `protocol.violation` events. A completed workstream with no
+assigned or matching implementation agent reports
+`unregistered_implementation_completion`; a completed workstream whose assigned
+agent record is missing or still non-valid reports the assigned-agent
+diagnostic instead. Completed assigned agents with invalid reports keep the
+report, scope, or capability diagnostic as the primary repair target.
+
 Agent registry records include:
 
 - `agent_id`
@@ -127,6 +136,11 @@ Agent registry records include:
 - `log_path`
 - `prompt_path` when a prompt snapshot is written
 - `stdout_path` and `stderr_path` when a live provider process is supervised
+- `provider_native_agent_id` when provider-native spawn succeeds. Status
+  readers also recognize compatibility fields `provider_native_spawn_ref`,
+  `launch_evidence.spawn_agent_id`,
+  `launch_evidence.provider_native_spawn_ref`, and
+  `provider_launch.evidence.provider_native_spawn_ref`.
 
 Coordinators are coordinator-only. A coordinator may write `.dispatch/` runtime
 state, assign workstreams, emit events, keep heartbeats, write reports, and
@@ -227,9 +241,13 @@ Optional fields:
 `protocol.violation`
 
 - Written when Dispatch Engine detects a coordinator-only, file-scope,
-  unregistered-agent, worker-report, or state-contract violation.
+  assigned-agent, unregistered-agent, worker-report, or state-contract
+  violation.
 - Includes `workstream` when the violation applies to a workstream.
 - Payload includes `violation` and `details`.
+- Historical events that omit `violation` but include capability-shaped fields
+  are normalized by `status --json` and `alerts --json` as
+  `capability_overreach` with the original payload preserved under `details`.
 
 `decision.requested`
 
@@ -349,7 +367,12 @@ termination before escalation, marks active run/supervisor/agent state
 structured `agents`, `agent_counts`, `workstream_assignments`,
 `heartbeat_summary`, `protocol_violations`, `lifecycle_diagnostics`, and
 cancellation metadata when a run is cancelled. Lifecycle diagnostics include
-running implementation agents with no launch evidence, stale detached
-supervisors, terminal coordinator/run states that leave child agents running
-without active supervision, and conservative stdout-only decision-request
-detection when no pending decision record or `decision.requested` event exists.
+running implementation agents with no launch evidence, active provider-native
+implementation agents with stale heartbeat/spawn evidence and no role-specific
+report, stale detached supervisors, terminal coordinator/run states that leave
+child agents running without active supervision, and conservative stdout-only
+decision-request detection when no pending decision record or
+`decision.requested` event exists.
+`protocol_violations.detected` is recomputed from current state; event-carried
+violations are normalized for alert usefulness but historical event JSON is not
+rewritten.

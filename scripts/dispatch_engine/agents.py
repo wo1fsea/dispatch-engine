@@ -731,6 +731,20 @@ def validate_review_validator_report(run_state_dir: Path, agent_id: str) -> list
 def detect_protocol_violations(run_state_dir: Path) -> list[dict[str, Any]]:
     violations: list[dict[str, Any]] = []
     agents = list_agents(run_state_dir)
+    implementation_agents = [
+        agent for agent in agents if agent.get("role") in IMPLEMENTATION_ROLES
+    ]
+    implementation_agent_by_id = {
+        str(agent.get("agent_id")): agent
+        for agent in implementation_agents
+        if agent.get("agent_id")
+    }
+    implementation_agents_by_workstream: dict[str, list[dict[str, Any]]] = {}
+    for agent in implementation_agents:
+        workstream = agent.get("workstream")
+        if isinstance(workstream, str) and workstream:
+            implementation_agents_by_workstream.setdefault(workstream, []).append(agent)
+
     for agent in agents:
         if agent.get("role") != "coordinator":
             continue
@@ -749,33 +763,91 @@ def detect_protocol_violations(run_state_dir: Path) -> list[dict[str, Any]]:
             )
 
     valid_implementation_workstreams = set()
-    for agent in agents:
-        if agent.get("role") not in IMPLEMENTATION_ROLES:
-            continue
+    invalid_report_workstreams = set()
+    for agent in implementation_agents:
         if agent.get("status") in COMPLETED_IMPLEMENTATION_AGENT_STATUSES:
             if agent.get("role") == "worker":
                 worker_violations = validate_worker_report(run_state_dir, agent["agent_id"])
             else:
                 worker_violations = validate_review_validator_report(run_state_dir, agent["agent_id"])
             violations.extend(worker_violations)
-            if not worker_violations and agent.get("workstream"):
-                valid_implementation_workstreams.add(agent.get("workstream"))
+            workstream = agent.get("workstream")
+            if worker_violations and workstream:
+                invalid_report_workstreams.add(workstream)
+            if not worker_violations and workstream:
+                valid_implementation_workstreams.add(workstream)
 
     for path in sorted((run_state_dir / "workstreams").glob("*.json")):
         workstream = json.loads(path.read_text(encoding="utf-8"))
         workstream_id = workstream.get("id", path.stem)
-        if (
-            workstream.get("status") in IMPLEMENTED_WORKSTREAM_STATUSES
-            and workstream_id not in valid_implementation_workstreams
-        ):
-            violations.append(
-                {
-                    "violation": "unregistered_implementation_completion",
-                    "workstream": workstream_id,
-                    "details": {"status": workstream.get("status")},
-                }
-            )
+        if workstream.get("status") not in IMPLEMENTED_WORKSTREAM_STATUSES:
+            continue
+        if workstream_id in valid_implementation_workstreams:
+            continue
+        assigned_agent_id = workstream.get("assigned_agent")
+        if isinstance(assigned_agent_id, str) and assigned_agent_id:
+            assigned_agent = implementation_agent_by_id.get(assigned_agent_id)
+            if assigned_agent is None:
+                violations.append(
+                    {
+                        "violation": "assigned_implementation_agent_missing",
+                        "workstream": workstream_id,
+                        "details": {
+                            "status": workstream.get("status"),
+                            "assigned_agent": assigned_agent_id,
+                        },
+                    }
+                )
+                continue
+            if assigned_agent.get("status") not in COMPLETED_IMPLEMENTATION_AGENT_STATUSES:
+                violations.append(
+                    _assigned_agent_status_violation(workstream, assigned_agent)
+                )
+                continue
+            continue
+
+        assigned_agents = implementation_agents_by_workstream.get(str(workstream_id), [])
+        if assigned_agents:
+            invalid_status_agents = [
+                agent
+                for agent in assigned_agents
+                if agent.get("status") not in COMPLETED_IMPLEMENTATION_AGENT_STATUSES
+            ]
+            if invalid_status_agents:
+                violations.extend(
+                    _assigned_agent_status_violation(workstream, agent)
+                    for agent in invalid_status_agents
+                )
+            elif workstream_id in invalid_report_workstreams:
+                continue
+            continue
+
+        violations.append(
+            {
+                "violation": "unregistered_implementation_completion",
+                "workstream": workstream_id,
+                "details": {"status": workstream.get("status")},
+            }
+        )
     return violations
+
+
+def _assigned_agent_status_violation(
+    workstream: dict[str, Any],
+    agent: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "violation": "assigned_implementation_agent_invalid_status",
+        "agent_id": agent.get("agent_id"),
+        "workstream": workstream.get("id"),
+        "details": {
+            "status": workstream.get("status"),
+            "assigned_agent": agent.get("agent_id"),
+            "agent_status": agent.get("status"),
+            "role": agent.get("role"),
+            "expected_agent_statuses": sorted(COMPLETED_IMPLEMENTATION_AGENT_STATUSES),
+        },
+    }
 
 
 def record_protocol_violations(run_state_dir: Path) -> list[dict[str, Any]]:
