@@ -180,6 +180,7 @@ python3 "$DE_SKILL/scripts/de.py" events "$TARGET" --since <event-id> --json
 python3 "$DE_SKILL/scripts/de.py" alerts "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" cancel "$TARGET" --run-id <run-id> --reason "<reason>" --json
+python3 "$DE_SKILL/scripts/de.py" resolve-protocol-violation "$TARGET" --run-id <run-id> --violation <name> --resolution <kind> --rationale "<why>" --evidence "<evidence>" --json
 ```
 
 `status --json` is the primary summary surface for Codex. Heartbeat checks can
@@ -230,6 +231,24 @@ Historical `protocol.violation` events may predate the current event schema.
 explicit `violation` into `capability_overreach` alerts and preserves the
 original payload in `details.payload` for audit.
 
+If interactive Codex or the coordinator reviews a protocol violation and finds
+that it was acknowledged, accepted with concerns, superseded by later
+validation, or a false positive, record that audit judgment with
+`resolve-protocol-violation`. The command appends to
+`.dispatch/runs/<run-id>/protocol-resolutions.jsonl` only after the selector
+matches a current protocol violation. Use `--agent-id` and `--workstream` when
+`--violation` alone would be ambiguous. `status --json` keeps original
+violations visible, adds resolved and unresolved splits plus a
+`protocol_violation_resolutions` summary, and uses only unresolved violations
+for `next_actions`; `alerts --json` no longer reports a matched resolved
+violation as an unresolved protocol alert.
+
+Resolution records are an audit overlay. They do not delete or rewrite the
+original event/report evidence, do not mark a terminal run completed, and do
+not authorize future workers to exceed their capability profile. Future runs
+must still request decisions or narrower scopes before using broader
+capabilities.
+
 `status --json` also includes `lifecycle_diagnostics` for material supervision
 gaps observed at read time. Treat `missing_agent_launch_evidence`,
 `provider_native_spawn_without_report`, `stale_detached_supervisor`,
@@ -250,6 +269,7 @@ Runtime state is stored under:
 .dispatch/runs/<run-id>/run.json
 .dispatch/runs/<run-id>/events.jsonl
 .dispatch/runs/<run-id>/decisions.jsonl
+.dispatch/runs/<run-id>/protocol-resolutions.jsonl
 .dispatch/runs/<run-id>/agents/
 .dispatch/runs/<run-id>/prompts/
 .dispatch/runs/<run-id>/supervisors/

@@ -87,7 +87,7 @@ Use the Dispatch Engine skill at <dispatch-engine skill path>. Read the latest
 run state with status --json, events --since <last-seen-event-id> --json, and
 alerts --json. Report only material changes: completed workstreams, blocked
 workstreams, failed agents, pending decisions, new protocol violations, run
-completion, or validation evidence.
+completion, protocol-violation resolution records, or validation evidence.
 
 If a pending decision needs user approval, summarize the options and ask the
 user before running resolve-decision. Do not resolve decisions on your own
@@ -126,7 +126,8 @@ Report only material changes:
   without a role-specific report after the staleness window
 - a detached supervisor is stale, or a terminal coordinator/run has orphaned
   still-running worker, reviewer, or validator agents
-- new protocol violation needs repair
+- new unresolved protocol violation needs repair
+- new protocol-violation resolution changes the audit state
 - new validation evidence changes confidence in completion
 
 Skip unchanged activity. A heartbeat that finds no material change should stay
@@ -209,6 +210,17 @@ Use the Codex-facing CLI surfaces in this order:
    --autonomous-rationale <text> --validation-expected <command> --json`:
    structured write surface for an allowed four-heartbeat autonomous technical
    fallback.
+7. `resolve-protocol-violation --violation <name> --resolution <kind>
+   --rationale <text> --evidence <text> --json`: append a protocol-violation
+   audit resolution after review. Add `--agent-id` and `--workstream` when the
+   selector would otherwise be ambiguous. Supported kinds are `acknowledged`,
+   `accepted_with_concerns`, `superseded_by_validation`, and `false_positive`.
+
+Protocol-violation resolution is an audit overlay only. It preserves the
+original violation evidence, does not rewrite a completed/failed/cancelled run,
+and does not relax capability-profile rules for future workers. Heartbeats
+should treat `status --json` unresolved counts as the repair queue and
+`protocol_violation_resolutions` as the audit trail.
 
 ## Fallback Wording
 

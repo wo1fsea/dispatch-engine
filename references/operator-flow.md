@@ -39,7 +39,7 @@ progress or asks for decisions.
 9. Immediately after every successful interactive detached launch, create a host-layer thread heartbeat for the current thread. This is required when the host supports wakeups, and the default interval is 15 minutes.
 10. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
 11. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
-12. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files.
+12. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files. For reviewed protocol violations, use `resolve-protocol-violation` to append an audit resolution; this preserves original evidence, affects unresolved protocol-alert overlays only, and never rewrites terminal run state or future worker capability grants.
 13. If the user asks to stop a run, call
     `python3 scripts/de.py cancel <repo> --run-id <run-id> --reason "<reason>" --json`.
     The `stop` command is an alias for natural-language use, while `cancel`

@@ -11,6 +11,7 @@ from dispatch_engine.agents import register_agent, register_worker_agent
 from dispatch_engine.cli import main
 from dispatch_engine.events import append_event, protocol_violation
 from dispatch_engine.plan_schema import import_dispatch_plan
+from dispatch_engine.protocol_resolutions import resolve_protocol_violation
 from dispatch_engine.state import run_alerts, run_status, tail_events
 
 
@@ -502,6 +503,127 @@ class StatusTailTests(unittest.TestCase):
             self.assertEqual(protocol_alerts[0]["agent_id"], "worker-001")
             self.assertEqual(protocol_alerts[0]["details"]["source"], "legacy_protocol_violation_payload")
             self.assertEqual(protocol_alerts[0]["details"]["payload"]["capability"], "test_execution")
+
+    def test_status_splits_resolved_and_unresolved_protocol_violations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="protocol resolution objective")
+            state_dir = Path(plan["state_dir"])
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-001"},
+                workstream="01-status-tail",
+            )
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="out_of_scope_changed_file",
+                details={"agent_id": "worker-002"},
+                workstream="02-status-tail",
+            )
+
+            resolve_protocol_violation(
+                state_dir,
+                violation="missing_worker_report",
+                resolution="accepted_with_concerns",
+                rationale="The report was later reconstructed from validation evidence.",
+                evidence="validation/validator-001.json",
+                agent_id="worker-001",
+                workstream="01-status-tail",
+                actor="interactive-codex",
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            protocol_status = status["protocol_violations"]
+            self.assertEqual(protocol_status["count"], 2)
+            self.assertEqual(protocol_status["resolved_count"], 1)
+            self.assertEqual(protocol_status["unresolved_count"], 1)
+            self.assertEqual(protocol_status["resolved"][0]["violation"], "missing_worker_report")
+            self.assertEqual(protocol_status["unresolved"][0]["violation"], "out_of_scope_changed_file")
+            self.assertEqual(status["protocol_violation_resolutions"]["count"], 1)
+            self.assertEqual(
+                [action for action in status["next_actions"] if action["type"] == "repair_protocol_violations"],
+                [{"type": "repair_protocol_violations", "count": 1}],
+            )
+
+    def test_resolution_record_matches_original_violation_not_future_broad_selector_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="broad selector audit objective")
+            state_dir = Path(plan["state_dir"])
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-001"},
+                workstream="01-status-tail",
+            )
+            resolve_protocol_violation(
+                state_dir,
+                violation="missing_worker_report",
+                resolution="acknowledged",
+                rationale="Single current violation was reviewed.",
+                evidence="Operator review note.",
+                actor="interactive-codex",
+            )
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-002"},
+                workstream="02-status-tail",
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertEqual(status["protocol_violations"]["resolved_count"], 1)
+            self.assertEqual(status["protocol_violations"]["unresolved_count"], 1)
+            self.assertEqual(status["protocol_violations"]["unresolved"][0]["agent_id"], "worker-002")
+
+    def test_alerts_skip_resolved_protocol_violations_and_legacy_kind_normalizes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="resolved alerts objective")
+            state_dir = Path(plan["state_dir"])
+            append_event(
+                state_dir / "events.jsonl",
+                "protocol.violation",
+                workstream="01-status-tail",
+                payload={
+                    "kind": "capability_overreach",
+                    "agent_id": "worker-001",
+                    "capability": "test_execution",
+                    "requested_mode": "unrestricted",
+                    "granted_mode": "allow-listed",
+                    "evidence": "legacy kind payload",
+                },
+            )
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-002"},
+                workstream="02-status-tail",
+            )
+            resolve_protocol_violation(
+                state_dir,
+                violation="capability_overreach",
+                resolution="false_positive",
+                rationale="The payload reflected an allowed validation command.",
+                evidence="Operator reviewed the validator command list.",
+                agent_id="worker-001",
+                workstream="01-status-tail",
+                actor="interactive-codex",
+            )
+
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            protocol_alerts = [alert for alert in alerts["alerts"] if alert["type"] == "protocol_violation"]
+            self.assertEqual([alert["violation"] for alert in protocol_alerts], ["missing_worker_report"])
+            status = run_status(repo, run_id=plan["run_id"])
+            self.assertEqual(status["protocol_violations"]["resolved"][0]["violation"], "capability_overreach")
+            self.assertEqual(
+                status["protocol_violations"]["resolved"][0]["details"]["payload"]["kind"],
+                "capability_overreach",
+            )
 
 
 def _import_plan(repo: Path, *, objective: str) -> dict:

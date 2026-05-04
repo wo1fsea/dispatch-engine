@@ -19,6 +19,7 @@ from .decisions import (
     resolve_decision,
 )
 from .plan_schema import PlanValidationError, import_dispatch_plan
+from .protocol_resolutions import ProtocolResolutionValidationError, resolve_protocol_violation
 from .state import run_alerts, run_events, run_status, tail_events
 from .supervisor import launch_detached_coordinator
 
@@ -110,6 +111,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json_flag(resolve_parser)
 
+    protocol_resolution_parser = subparsers.add_parser(
+        "resolve-protocol-violation",
+        help="Record an audit resolution for a current protocol violation.",
+    )
+    protocol_resolution_parser.add_argument("target", help="Repository path containing .dispatch state.")
+    protocol_resolution_parser.add_argument("--run-id", help="Resolve a specific run id instead of the latest run.")
+    protocol_resolution_parser.add_argument("--violation", required=True, help="Protocol violation name to resolve.")
+    protocol_resolution_parser.add_argument(
+        "--resolution",
+        required=True,
+        help="Resolution kind: acknowledged, accepted_with_concerns, superseded_by_validation, or false_positive.",
+    )
+    protocol_resolution_parser.add_argument("--rationale", required=True, help="Why this resolution is valid.")
+    protocol_resolution_parser.add_argument("--evidence", required=True, help="Evidence supporting the resolution.")
+    protocol_resolution_parser.add_argument("--agent-id", help="Optional agent id selector.")
+    protocol_resolution_parser.add_argument("--workstream", help="Optional workstream selector.")
+    protocol_resolution_parser.add_argument("--actor", help="Actor recorded in resolution state.")
+    _add_json_flag(protocol_resolution_parser)
+
     run_parser = subparsers.add_parser("run", help="Render or launch a provider CLI coordinator.")
     run_parser.add_argument("target", help="Repository path containing .dispatch state.")
     run_parser.add_argument("--run-id", help="Use a specific run id instead of the latest run.")
@@ -184,6 +204,20 @@ def main(argv: list[str] | None = None) -> int:
             autonomous_rationale=args.autonomous_rationale,
             validation_expected=args.validation_expected,
             excluded_categories=args.excluded_category,
+        )
+        return _print(result, args.json)
+
+    if args.command == "resolve-protocol-violation":
+        result = _resolve_protocol_violation_command(
+            Path(args.target),
+            run_id=args.run_id,
+            violation=args.violation,
+            resolution=args.resolution,
+            rationale=args.rationale,
+            evidence=args.evidence,
+            agent_id=args.agent_id,
+            workstream=args.workstream,
+            actor=args.actor,
         )
         return _print(result, args.json)
 
@@ -285,6 +319,12 @@ def _print(payload: dict, as_json: bool) -> int:
     if kind == "decision_resolution":
         print(f"Resolved decision: {payload['decision_id']}")
         print(f"Option: {payload['selected_option_id']}")
+        print(f"State: {payload['state_dir']}")
+        return 0
+
+    if kind == "protocol_violation_resolution":
+        print(f"Resolved protocol violation: {payload['violation']}")
+        print(f"Resolution: {payload['resolution']['resolution']}")
         print(f"State: {payload['state_dir']}")
         return 0
 
@@ -480,6 +520,64 @@ def _resolve_decision_command(
         "decision_id": decision_id,
         "selected_option_id": option_id,
         "decision": decision,
+    }
+
+
+def _resolve_protocol_violation_command(
+    target: Path,
+    *,
+    run_id: str | None,
+    violation: str,
+    resolution: str,
+    rationale: str,
+    evidence: str,
+    agent_id: str | None,
+    workstream: str | None,
+    actor: str | None,
+) -> dict:
+    from .runs import resolve_run_dir
+
+    root = target.resolve()
+    selected = resolve_run_dir(root, run_id)
+    if selected is None:
+        result = {
+            "kind": "error",
+            "status": "missing_run" if run_id else "no_run",
+            "summary": f"Run not found: {run_id}" if run_id else "No Dispatch Engine runs found.",
+        }
+        if run_id:
+            result["run_id"] = run_id
+        return result
+
+    try:
+        record = resolve_protocol_violation(
+            selected,
+            violation=violation,
+            resolution=resolution,
+            rationale=rationale,
+            evidence=evidence,
+            agent_id=agent_id,
+            workstream=workstream,
+            actor=actor or "dispatch-engine",
+        )
+    except ProtocolResolutionValidationError as exc:
+        return {
+            "kind": "error",
+            "status": exc.status,
+            "summary": str(exc),
+            "run_id": selected.name,
+            "state_dir": str(selected),
+        }
+
+    return {
+        "kind": "protocol_violation_resolution",
+        "status": "ok",
+        "summary": f"Resolved protocol violation {violation}.",
+        "run_id": selected.name,
+        "state_dir": str(selected),
+        "violation": violation,
+        "matched_violation": record["matched_violation"],
+        "resolution": record,
     }
 
 

@@ -252,6 +252,116 @@ class CodexFacingControlSurfaceTests(unittest.TestCase):
             self.assertEqual(second_exit, 1)
             self.assertIn("not pending", json.loads(second_stdout.getvalue())["summary"])
 
+    def test_resolve_protocol_violation_command_writes_append_only_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-001"},
+                workstream="01-control-surface",
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "resolve-protocol-violation",
+                        str(repo),
+                        "--violation",
+                        "missing_worker_report",
+                        "--resolution",
+                        "superseded_by_validation",
+                        "--rationale",
+                        "Later validation produced the missing worker report.",
+                        "--evidence",
+                        "reports/worker-001.json and validation/validator-001.json",
+                        "--agent-id",
+                        "worker-001",
+                        "--workstream",
+                        "01-control-surface",
+                        "--actor",
+                        "interactive-codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["kind"], "protocol_violation_resolution")
+            self.assertEqual(payload["resolution"]["resolution"], "superseded_by_validation")
+            self.assertEqual(payload["resolution"]["selector"]["violation"], "missing_worker_report")
+            self.assertEqual(payload["matched_violation"]["agent_id"], "worker-001")
+            records = [
+                json.loads(line)
+                for line in (state_dir / "protocol-resolutions.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["actor"], "interactive-codex")
+
+    def test_resolve_protocol_violation_command_rejects_invalid_or_ambiguous_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-001"},
+                workstream="01-control-surface",
+            )
+            protocol_violation(
+                state_dir / "events.jsonl",
+                violation="missing_worker_report",
+                details={"agent_id": "worker-002"},
+                workstream="02-control-surface",
+            )
+
+            ambiguous_stdout = io.StringIO()
+            with redirect_stdout(ambiguous_stdout):
+                ambiguous_exit = main(
+                    [
+                        "resolve-protocol-violation",
+                        str(repo),
+                        "--violation",
+                        "missing_worker_report",
+                        "--resolution",
+                        "acknowledged",
+                        "--rationale",
+                        "Reviewed.",
+                        "--evidence",
+                        "Operator note.",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(ambiguous_exit, 1)
+            self.assertEqual(json.loads(ambiguous_stdout.getvalue())["status"], "ambiguous_protocol_violation_selector")
+            self.assertFalse((state_dir / "protocol-resolutions.jsonl").exists())
+
+            invalid_kind_stdout = io.StringIO()
+            with redirect_stdout(invalid_kind_stdout):
+                invalid_kind_exit = main(
+                    [
+                        "resolve-protocol-violation",
+                        str(repo),
+                        "--violation",
+                        "missing_worker_report",
+                        "--resolution",
+                        "ignored",
+                        "--rationale",
+                        "Reviewed.",
+                        "--evidence",
+                        "Operator note.",
+                        "--agent-id",
+                        "worker-001",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(invalid_kind_exit, 1)
+            self.assertEqual(json.loads(invalid_kind_stdout.getvalue())["status"], "invalid_protocol_violation_resolution")
+
 
 def _import_plan(repo: Path) -> Path:
     return Path(import_dispatch_plan(repo, _plan_file(repo))["state_dir"])

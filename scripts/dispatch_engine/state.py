@@ -21,6 +21,11 @@ from .decisions import (
     validate_decision_blocker_state,
 )
 from .events import EventCursorError, read_events, read_events_with_ids
+from .protocol_resolutions import (
+    event_protocol_violation,
+    protocol_resolution_overlay,
+    unique_protocol_violations,
+)
 from .runs import resolve_run_dir
 from .supervisor import read_supervisors
 
@@ -198,7 +203,7 @@ def run_alerts(target: Path, run_id: str | None = None) -> dict:
     agents = list_agents(selected)
     pending_decisions = _pending_decision_records(selected, data)
     unresolved_blockers = list_unresolved_blockers(selected)
-    protocol_violations = _protocol_violations(selected, events)
+    protocol_violations = _protocol_violation_summary(selected, events)
     supervisors = read_supervisors(selected)
     lifecycle_diagnostics = _lifecycle_diagnostics(
         selected,
@@ -213,7 +218,7 @@ def run_alerts(target: Path, run_id: str | None = None) -> dict:
         run=data,
         pending_decisions=pending_decisions,
         unresolved_blockers=unresolved_blockers,
-        protocol_violations=protocol_violations,
+        protocol_violations=protocol_violations["unresolved"],
         agents=agents,
         lifecycle_diagnostics=lifecycle_diagnostics,
     )
@@ -223,6 +228,7 @@ def run_alerts(target: Path, run_id: str | None = None) -> dict:
         "summary": f"Run {selected.name} has {len(alerts)} material alert(s).",
         "run_id": selected.name,
         "state_dir": str(selected),
+        "protocol_violation_resolutions": protocol_violations["resolution_summary"],
         "alerts": _with_alert_ids(alerts),
     }
 
@@ -271,6 +277,7 @@ def _agent_observability(
             "by_status": dict(Counter(item.get("status", "unknown") for item in supervisors)),
         },
         "protocol_violations": protocol_violations,
+        "protocol_violation_resolutions": protocol_violations["resolution_summary"],
         "capability_profiles": _capability_profile_summary(
             run_state_dir,
             agents,
@@ -345,9 +352,9 @@ def _next_actions(
             }
         )
 
-    violation_count = protocol_violations.get("count", 0)
+    violation_count = protocol_violations.get("unresolved_count", protocol_violations.get("count", 0))
     report_schema_actions = _report_schema_repair_actions(
-        protocol_violations.get("detected", []),
+        protocol_violations.get("unresolved_detected", protocol_violations.get("detected", [])),
         agents,
     )
     actions.extend(report_schema_actions)
@@ -944,54 +951,37 @@ def _workstream_progress(
 
 
 def _protocol_violation_summary(run_state_dir: Path, events: list[dict[str, Any]]) -> dict[str, Any]:
-    event_violations = [_event_protocol_violation(event) for event in events if event.get("type") == "protocol.violation"]
+    event_violations = [event_protocol_violation(event) for event in events if event.get("type") == "protocol.violation"]
     detected_violations = detect_protocol_violations(run_state_dir)
-    unique = _unique_protocol_violations([*event_violations, *detected_violations])
+    unique = unique_protocol_violations([*event_violations, *detected_violations])
+    overlay = protocol_resolution_overlay(run_state_dir, unique)
+    unresolved_keys = {
+        json.dumps(violation, sort_keys=True)
+        for violation in overlay["unresolved"]
+    }
+    resolution_summary = {
+        "count": overlay["count"],
+        "matched_count": overlay["matched_count"],
+        "records": overlay["records"],
+        "unmatched": overlay["unmatched"],
+    }
     return {
         "count": len(unique),
         "event_count": len(event_violations),
         "detected_count": len(detected_violations),
         "detected": detected_violations,
+        "unresolved_detected": [
+            violation
+            for violation in detected_violations
+            if json.dumps(violation, sort_keys=True) in unresolved_keys
+        ],
+        "resolved_count": overlay["resolved_count"],
+        "unresolved_count": overlay["unresolved_count"],
+        "resolved": overlay["resolved"],
+        "unresolved": overlay["unresolved"],
+        "resolution_summary": resolution_summary,
+        "resolutions": overlay["records"],
     }
-
-
-def _event_protocol_violation(event: dict[str, Any]) -> dict[str, Any]:
-    payload = event.get("payload", {})
-    if not isinstance(payload, dict):
-        payload = {}
-    violation_name = payload.get("violation")
-    details = payload.get("details", {})
-    if not isinstance(details, dict):
-        details = {"details": details}
-    if not isinstance(violation_name, str) or not violation_name:
-        violation_name, details = _normalize_legacy_protocol_violation_payload(payload, details)
-    violation = {
-        "violation": violation_name,
-        "details": details,
-    }
-    agent_id = payload.get("agent_id")
-    if isinstance(agent_id, str) and agent_id:
-        violation["agent_id"] = agent_id
-    if "workstream" in event:
-        violation["workstream"] = event["workstream"]
-    return violation
-
-
-def _normalize_legacy_protocol_violation_payload(
-    payload: dict[str, Any],
-    details: dict[str, Any],
-) -> tuple[str, dict[str, Any]]:
-    capability_payload = payload if "capability" in payload else details
-    if "capability" in capability_payload:
-        normalized_details = {
-            "source": "legacy_protocol_violation_payload",
-            "payload": payload,
-        }
-        for field in ("capability", "requested_mode", "granted_mode", "evidence"):
-            if field in capability_payload:
-                normalized_details[field] = capability_payload[field]
-        return "capability_overreach", normalized_details
-    return "unknown", details
 
 
 def _material_alerts(
@@ -1107,17 +1097,6 @@ def _material_alerts(
     return alerts
 
 
-def _protocol_violations(run_state_dir: Path, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    event_violations = [_event_protocol_violation(event) for event in events if event.get("type") == "protocol.violation"]
-    return _unique_protocol_violations([*event_violations, *detect_protocol_violations(run_state_dir)])
-
-
-def _unique_protocol_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    unique: dict[str, dict[str, Any]] = {}
-    for violation in violations:
-        key = json.dumps(violation, sort_keys=True)
-        unique[key] = violation
-    return [unique[key] for key in sorted(unique)]
 
 
 def _with_alert_ids(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:

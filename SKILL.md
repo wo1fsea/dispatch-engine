@@ -72,6 +72,10 @@ python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option
   --autonomous-technical --unanswered-heartbeats 4 \
   --autonomous-rationale "<why this is conservative and reversible>" \
   --validation-expected "<validation command>" --json
+python scripts/de.py resolve-protocol-violation <repo> --run-id <run-id> \
+  --violation <name> --resolution superseded_by_validation \
+  --rationale "<why this protocol issue is reviewed>" \
+  --evidence "<validation or audit evidence>" --json
 python scripts/de.py tail <repo>
 ```
 
@@ -166,8 +170,14 @@ expectations, escalation rules, and report path.
     actor to `interactive-codex-autonomous`, appends the source-of-truth record
     to `.dispatch/runs/<run-id>/decisions.jsonl`, and exposes a convenience
     `status --json` `autonomous_decisions` summary.
-14. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
-15. When this skill, `de`, the coordinator protocol, heartbeat guidance,
+14. When protocol violations are reviewed, accepted with concerns, judged false
+    positive, or superseded by later validation, record the audit judgment with
+    `resolve-protocol-violation`. This appends
+    `.dispatch/runs/<run-id>/protocol-resolutions.jsonl`, preserves the
+    original violation evidence, affects unresolved status/alert overlays only,
+    and never rewrites terminal run state or future worker capability grants.
+15. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
+16. When this skill, `de`, the coordinator protocol, heartbeat guidance,
     status/alert/event surfaces, prompt templates, or any Dispatch
     Engine-owned process creates a framework problem or process blocker, follow
     `references/issue-reporting-protocol.md` and proactively file or prepare a

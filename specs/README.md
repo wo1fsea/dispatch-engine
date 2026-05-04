@@ -43,3 +43,4 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0021-provider-native-worker-lifecycle`: ready provider-native launch evidence and no-report lifecycle diagnostics for dogfood issues #15 and #18.
 - `rfc-0022-protocol-violation-status-accuracy`: ready diagnostic accuracy fixes for current dogfood issue #16 scope.
 - `rfc-0020-run-cancel-control`: planned Codex-facing cancellation control for detached runs, including `de cancel`, `de stop`, durable cancelled state, events, alerts, and heartbeat shutdown guidance.
+- `rfc-0023-protocol-violation-resolution`: active durable protocol-violation acknowledgement/supersession records for dogfood issue #19.
