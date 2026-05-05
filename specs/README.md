@@ -46,3 +46,7 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0023-protocol-violation-resolution`: validated durable protocol-violation acknowledgement/supersession records for dogfood issue #19.
 - `rfc-0024-dashboard-autostart-observer`: locally committed dashboard observer and prototype-parity baseline, including `de dashboard`, read-only browser surfaces, theme/density preferences, event-tail resize, explicit empty states, and captured prototype assets.
 - `rfc-0025-safe-parallel-dispatch-contract`: ready safe parallel dispatch contract for issue #22, requiring explicit parallelism analysis, ready-set coordinator dispatch, serial rationale, and optional warning-only plan diagnostics.
+- `rfc-0026-dashboard-status-plan-consistency`: ready dashboard/status consistency fix for issue #24, requiring shared workstream normalization across `de status --json`, `/api/status`, and `/api/plan`.
+- `rfc-0027-dashboard-observer-lifecycle`: ready dashboard observer lifecycle contract for issue #23, covering cancelled, terminal, and superseded run dashboards while keeping heartbeat as the operator wakeup mechanism.
+- `rfc-0028-coordinator-approval-decision-record`: ready coordinator approval decision-record contract for issue #21, ensuring approval blockers become durable pending decisions instead of stdout-only prompts.
+- `rfc-0029-validation-worker-stall-terminalization`: ready validation-worker stall terminalization spec for issue #20, requiring stale validation diagnostics and terminal report evidence.
