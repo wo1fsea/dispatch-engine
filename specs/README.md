@@ -45,3 +45,4 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0020-run-cancel-control`: validated Codex-facing cancellation control for detached runs, including `de cancel`, `de stop`, durable cancelled state, events, alerts, and heartbeat shutdown guidance.
 - `rfc-0023-protocol-violation-resolution`: validated durable protocol-violation acknowledgement/supersession records for dogfood issue #19.
 - `rfc-0024-dashboard-autostart-observer`: locally committed dashboard observer and prototype-parity baseline, including `de dashboard`, read-only browser surfaces, theme/density preferences, event-tail resize, explicit empty states, and captured prototype assets.
+- `rfc-0025-safe-parallel-dispatch-contract`: ready safe parallel dispatch contract for issue #22, requiring explicit parallelism analysis, ready-set coordinator dispatch, serial rationale, and optional warning-only plan diagnostics.
