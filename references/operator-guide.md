@@ -119,6 +119,19 @@ python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 
 Omitting `--provider` defaults to provider `codex`, using a `codex exec --sandbox danger-full-access` command shape. `--provider codex` selects the same provider explicitly. `--provider claude` is optional and uses a Claude CLI command shape based on `claude --dangerously-skip-permissions --permission-mode bypassPermissions -p`.
 
+For active Dispatch Engine sessions, also start or reuse the read-only
+dashboard observer:
+
+```bash
+python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --detach --json
+```
+
+The JSON response includes a `url` when the service is running. Interactive
+Codex should open that URL in the Codex in-app browser when the host provides
+one. The dashboard is a local observer for run state and static UI assets; it
+does not replace heartbeat supervision, `status --json`, `events --since`, or
+`alerts --json`, and it must not be treated as a write surface.
+
 Detached runs do not automatically wake the foreground Codex chat. After every
 successful interactive `run --detach`, interactive Codex must create a
 host-layer thread heartbeat when the current host supports wakeups. The
@@ -179,6 +192,9 @@ python3 "$DE_SKILL/scripts/de.py" status "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" events "$TARGET" --since <event-id> --json
 python3 "$DE_SKILL/scripts/de.py" alerts "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
+python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --detach --json
+python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --status --json
+python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --stop --json
 python3 "$DE_SKILL/scripts/de.py" cancel "$TARGET" --run-id <run-id> --reason "<reason>" --json
 python3 "$DE_SKILL/scripts/de.py" resolve-protocol-violation "$TARGET" --run-id <run-id> --violation <name> --resolution <kind> --rationale "<why>" --evidence "<evidence>" --json
 ```
@@ -278,6 +294,7 @@ Runtime state is stored under:
 .dispatch/runs/<run-id>/validation/
 .dispatch/runs/<run-id>/logs/
 .dispatch/runs/<run-id>/heartbeats/
+.dispatch/runs/<run-id>/dashboard/
 ```
 
 ## Cancelling A Run
@@ -341,6 +358,8 @@ Accepted project changes belong in normal source, test, docs, spec, or configura
 - `run --provider claude` fails because `claude` is unavailable: install/configure Claude CLI or use the default Codex provider.
 - `cancel` reports `no_run` or `missing_run`: import or select an existing run before cancelling.
 - `cancel` reports `run_already_terminal`: completed and failed runs cannot be cancelled; already-cancelled runs return idempotent success.
+- `dashboard --detach --json` returns `missing_dashboard_assets`: verify the installed skill root includes `dashboard/index.html` and recopy or reinstall the complete skill root if it does not.
+- Dashboard URL opens but progress seems stale: keep using `status --json`, `events --since`, and `alerts --json`; the dashboard is read-only visibility and does not replace heartbeat checks.
 - Progress looks stale: check `status`, then `tail`, then inspect `.dispatch/runs/<run-id>/logs/` and `.dispatch/runs/<run-id>/events.jsonl`.
 - A capability escalation is pending: read `status --json` `capability_profiles.pending_decisions` and `.pending_escalations`, then resolve the linked decision or narrow/reassign the workstream.
 - A protocol alert says `capability_overreach` with `details.source` set to `legacy_protocol_violation_payload`: inspect `details.payload`; the run file was not rewritten, but the alert has been normalized for triage.
@@ -357,6 +376,7 @@ python3 scripts/de.py --help
 python3 scripts/de.py events --help
 python3 scripts/de.py alerts --help
 python3 scripts/de.py cancel --help
+python3 scripts/de.py dashboard --help
 python3 scripts/de.py stop --help
 python3 scripts/de.py resolve-decision --help
 python3 scripts/de.py run --help

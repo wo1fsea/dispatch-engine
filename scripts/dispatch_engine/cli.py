@@ -9,6 +9,7 @@ from pathlib import Path
 from . import __version__
 from .cancel import cancel_run
 from .coordinators import CoordinatorLaunchError, launch_run_coordinator, render_run_dry_run
+from .dashboard import dashboard_status, launch_dashboard, serve_dashboard, stop_dashboard
 from .decisions import (
     AUTONOMOUS_TECHNICAL_ACTOR,
     AUTONOMOUS_TECHNICAL_MODE,
@@ -60,6 +61,17 @@ def build_parser() -> argparse.ArgumentParser:
     alerts_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     alerts_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
     _add_json_flag(alerts_parser)
+
+    dashboard_parser = subparsers.add_parser("dashboard", help="Start or report on a local dashboard observer.")
+    dashboard_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
+    dashboard_parser.add_argument("--run-id", help="Use a specific run id instead of the latest run.")
+    dashboard_parser.add_argument("--host", default="127.0.0.1", help="Dashboard bind host; defaults to 127.0.0.1.")
+    dashboard_parser.add_argument("--port", type=int, default=0, help="Dashboard bind port; defaults to 0.")
+    dashboard_parser.add_argument("--detach", action="store_true", help="Start or reuse a background dashboard service.")
+    dashboard_parser.add_argument("--status", action="store_true", help="Report the recorded dashboard service state.")
+    dashboard_parser.add_argument("--stop", action="store_true", help="Stop the recorded dashboard service.")
+    dashboard_parser.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)
+    _add_json_flag(dashboard_parser)
 
     for command, help_text in (
         ("cancel", "Cancel an active Dispatch Engine run."),
@@ -182,6 +194,36 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "alerts":
         result = run_alerts(Path(args.target), run_id=args.run_id)
+        return _print(result, args.json)
+
+    if args.command == "dashboard":
+        selected_modes = [args.detach, args.status, args.stop, args.serve]
+        if sum(1 for selected in selected_modes if selected) > 1:
+            return _print(
+                {
+                    "kind": "error",
+                    "status": "invalid_dashboard_mode",
+                    "summary": "Use only one of --detach, --status, --stop, or --serve.",
+                },
+                args.json,
+            )
+        if args.status:
+            result = dashboard_status(Path(args.target), run_id=args.run_id)
+        elif args.stop:
+            result = stop_dashboard(Path(args.target), run_id=args.run_id)
+        elif args.serve:
+            if args.run_id is None:
+                result = launch_dashboard(Path(args.target), host=args.host, port=args.port, detach=False)
+            else:
+                result = serve_dashboard(Path(args.target), run_id=args.run_id, host=args.host, port=args.port)
+        else:
+            result = launch_dashboard(
+                Path(args.target),
+                run_id=args.run_id,
+                host=args.host,
+                port=args.port,
+                detach=args.detach,
+            )
         return _print(result, args.json)
 
     if args.command in {"cancel", "stop"}:
@@ -314,6 +356,23 @@ def _print(payload: dict, as_json: bool) -> int:
             return 0
         for alert in payload["alerts"]:
             print(f"{alert['id']} {alert['type']}")
+        return 0
+
+    if kind == "dashboard":
+        print(f"Dashboard: {payload['status']}")
+        print(f"Run: {payload['run_id']}")
+        print(f"URL: {payload['url']}")
+        print(f"State: {payload['state_dir']}")
+        print(f"PID: {payload['pid']}")
+        return 0
+
+    if kind in {"dashboard_status", "dashboard_stop"}:
+        print(payload["summary"])
+        if payload.get("url"):
+            print(f"URL: {payload['url']}")
+        if payload.get("pid"):
+            print(f"PID: {payload['pid']}")
+        print(f"Alive: {payload.get('alive')}")
         return 0
 
     if kind == "decision_resolution":

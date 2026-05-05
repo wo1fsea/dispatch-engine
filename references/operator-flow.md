@@ -37,17 +37,18 @@ progress or asks for decisions.
 7. Preview coordinator launch with `python3 scripts/de.py run <repo> --dry-run`; omitting `--provider` uses the default `codex` provider, while `--provider claude` is optional.
 8. Prefer `python3 scripts/de.py run <repo> --detach` from interactive Codex so the conversation can continue while status and tail are polled.
 9. Immediately after every successful interactive detached launch, create a host-layer thread heartbeat for the current thread. This is required when the host supports wakeups, and the default interval is 15 minutes.
-10. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
-11. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
-12. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files. For reviewed protocol violations, use `resolve-protocol-violation` to append an audit resolution; this preserves original evidence, affects unresolved protocol-alert overlays only, and never rewrites terminal run state or future worker capability grants.
-13. If the user asks to stop a run, call
+10. For active sessions, launch or reuse the dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available.
+11. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
+12. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
+13. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files. The dashboard is a supplementary read-only observer, not a replacement for these supervision checks. For reviewed protocol violations, use `resolve-protocol-violation` to append an audit resolution; this preserves original evidence, affects unresolved protocol-alert overlays only, and never rewrites terminal run state or future worker capability grants.
+14. If the user asks to stop a run, call
     `python3 scripts/de.py cancel <repo> --run-id <run-id> --reason "<reason>" --json`.
     The `stop` command is an alias for natural-language use, while `cancel`
     remains canonical. Cancellation is terminal but distinct from failure,
     preserves `.dispatch/` evidence, and should be followed by `status --json`,
     `events --since`, and `alerts --json` before reporting the reason once and
     stopping the heartbeat.
-14. Resolve decisions explicitly after user approval, using `resolve-decision`.
+15. Resolve decisions explicitly after user approval, using `resolve-decision`.
     Technical decisions may be resolved autonomously only after four
     consecutive unanswered heartbeat checks. Use `resolve-decision
     --autonomous-technical --unanswered-heartbeats <count>
@@ -56,8 +57,8 @@ progress or asks for decisions.
     source-of-truth record to `decisions.jsonl`, validates only metadata
     invariants, and exposes a convenience `status --json`
     `autonomous_decisions` summary.
-15. Report validation evidence, residual risk, and all autonomous technical choices made during the run.
-16. If Dispatch Engine itself creates a framework problem or process blocker,
+16. Report validation evidence, residual risk, and all autonomous technical choices made during the run.
+17. If Dispatch Engine itself creates a framework problem or process blocker,
     proactively file or prepare a GitHub issue against
     `https://github.com/wo1fsea/dispatch-engine/issues` using
     `references/issue-reporting-protocol.md`.
@@ -73,6 +74,11 @@ heartbeat automation. For interactive detached runs, that heartbeat is a
 required supervision companion and must be stopped when the run reaches a
 terminal state. A cancelled run should be reported once with its cancellation
 reason from `status --json` before the heartbeat is stopped.
+
+The dashboard observer is separate from that heartbeat. It gives interactive
+Codex and the user a read-only browser view over Dispatch Engine state, but it
+does not wake the foreground chat, resolve decisions, cancel runs, or replace
+the `status --json`, `events --since`, and `alerts --json` supervision loop.
 
 If host wakeups are unavailable, use this wording:
 

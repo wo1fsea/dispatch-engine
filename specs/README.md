@@ -44,3 +44,4 @@ specs/<source>-<id>-<short-slug>/
 - `rfc-0022-protocol-violation-status-accuracy`: ready diagnostic accuracy fixes for current dogfood issue #16 scope.
 - `rfc-0020-run-cancel-control`: planned Codex-facing cancellation control for detached runs, including `de cancel`, `de stop`, durable cancelled state, events, alerts, and heartbeat shutdown guidance.
 - `rfc-0023-protocol-violation-resolution`: active durable protocol-violation acknowledgement/supersession records for dogfood issue #19.
+- `rfc-0024-dashboard-autostart-observer`: active local dashboard service and Codex browser observer for active Dispatch Engine sessions.

@@ -62,6 +62,9 @@ python scripts/de.py run <repo> --detach
 python scripts/de.py run <repo> --dry-run
 python scripts/de.py run <repo> --provider codex --dry-run
 python scripts/de.py run <repo> --provider claude --dry-run
+python scripts/de.py dashboard <repo> --detach --json
+python scripts/de.py dashboard <repo> --status --json
+python scripts/de.py dashboard <repo> --stop --json
 python scripts/de.py status <repo>
 python scripts/de.py events <repo> --since event-000001 --json
 python scripts/de.py alerts <repo> --json
@@ -111,6 +114,15 @@ is cancelled, interactive Codex must pause, delete, or otherwise stop the
 heartbeat. Dispatch Engine itself does not send chat messages or wake the
 thread; heartbeat lifecycle belongs to the Codex host layer.
 
+For active Dispatch Engine sessions, interactive Codex should also launch or
+reuse the read-only dashboard observer with
+`python3 scripts/de.py dashboard . --detach --json` from the target repository
+root, or pass the target repo path explicitly. When the command returns a
+`url`, open that URL in the Codex in-app browser when the host provides one.
+The dashboard is an observer UI only; it does not mutate repository or
+`.dispatch/` state, and it does not replace heartbeat supervision or explicit
+`status --json`, `events --since`, and `alerts --json` checks.
+
 Live runs write a prompt snapshot and process logs under the target repository's
 run state:
 
@@ -152,16 +164,17 @@ expectations, escalation rules, and report path.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
 8. Immediately create a host-layer heartbeat monitor for the current thread after every successful interactive detached launch. This is required, not optional, when the host supports thread wakeups. The default interval is 15 minutes.
-9. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
-10. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
-11. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection.
-12. If the user asks to stop a run, call
+9. For active sessions, launch or reuse the read-only dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available.
+10. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
+11. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
+12. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection. Treat the dashboard as supplementary read-only visibility, not as the source of truth for supervision.
+13. If the user asks to stop a run, call
     `python scripts/de.py cancel <repo> --run-id <run-id> --reason "<user-facing reason>" --json`,
     then read `status --json`, `events --since`, and `alerts --json` before
     summarizing the terminal cancelled state. Use `stop` only as an alias when
     natural language makes it clearer; keep `cancel` canonical in docs and
     automation.
-13. Resolve pending decisions explicitly after user approval with
+14. Resolve pending decisions explicitly after user approval with
     `resolve-decision`. If the same technical decision remains unresolved after
     four consecutive heartbeat checks, interactive Codex plus the heartbeat
     owns the eligibility judgment and may choose a conservative, reversible
@@ -170,14 +183,14 @@ expectations, escalation rules, and report path.
     actor to `interactive-codex-autonomous`, appends the source-of-truth record
     to `.dispatch/runs/<run-id>/decisions.jsonl`, and exposes a convenience
     `status --json` `autonomous_decisions` summary.
-14. When protocol violations are reviewed, accepted with concerns, judged false
+15. When protocol violations are reviewed, accepted with concerns, judged false
     positive, or superseded by later validation, record the audit judgment with
     `resolve-protocol-violation`. This appends
     `.dispatch/runs/<run-id>/protocol-resolutions.jsonl`, preserves the
     original violation evidence, affects unresolved status/alert overlays only,
     and never rewrites terminal run state or future worker capability grants.
-15. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
-16. When this skill, `de`, the coordinator protocol, heartbeat guidance,
+16. Record validation evidence before claiming a run is complete. The final report must list every autonomous technical decision made during the run.
+17. When this skill, `de`, the coordinator protocol, heartbeat guidance,
     status/alert/event surfaces, prompt templates, or any Dispatch
     Engine-owned process creates a framework problem or process blocker, follow
     `references/issue-reporting-protocol.md` and proactively file or prepare a

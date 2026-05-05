@@ -24,6 +24,13 @@ read and explain that state.
 Dispatch Engine itself does not send chat messages, schedule host wakeups, or
 own the heartbeat. Keep heartbeat configuration in the Codex host layer.
 
+The dashboard observer is also outside the heartbeat. For active Dispatch
+Engine sessions, interactive Codex should launch or reuse it with
+`python3 scripts/de.py dashboard <repo> --detach --json` and open the returned
+`url` in the Codex in-app browser when available. The dashboard is read-only
+visibility for humans and Codex; it does not create wakeups, perform
+supervision, mutate `.dispatch/` state, or replace heartbeat checks.
+
 ## Required Lifecycle
 
 After every successful interactive `de run <repo> --detach` launch:
@@ -49,6 +56,10 @@ This is a lifecycle requirement, not an optional recommendation. Do not treat a
 detached run as proactively supervised until the heartbeat exists. If the host
 cannot create a heartbeat, tell the user before continuing the detached run
 workflow.
+
+Opening the dashboard URL is useful operator visibility, but it does not make a
+detached run proactively supervised. Keep the heartbeat active until the run
+reaches a terminal state or the user explicitly abandons the run.
 
 ## Interval Guidance
 

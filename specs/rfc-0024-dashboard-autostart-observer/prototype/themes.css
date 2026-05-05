@@ -1,0 +1,183 @@
+/* Theme presets — override CSS vars by data-theme on <body> */
+
+/* default: cyan mission control (already in :root) */
+
+/* shared theme defaults — tokens used by new components */
+body[data-theme="carbon"], body[data-theme="solar"], body[data-theme="indigo"],
+body[data-theme="forest"], body[data-theme="crimson"] {
+  --ok-line: rgba(0,0,0,0.18);
+  --warn-line: rgba(0,0,0,0.18);
+  --danger-line: rgba(0,0,0,0.18);
+  --line-3: rgba(0,0,0,0.25);
+  --accent-on: #fbf7ee;
+}
+
+/* ─── 02 Carbon ──── monochrome neutral + amber accent (calmer) */
+body[data-theme="carbon"] {
+  --bg-0: #0c0c0d;
+  --bg-1: #131315;
+  --bg-2: #1a1a1d;
+  --bg-3: #232327;
+  --bg-4: #2c2c31;
+  --line: #1f1f23;
+  --line-2: #2c2c33;
+  --fg-0: #ececec;
+  --fg-1: #b9b9bd;
+  --fg-2: #828287;
+  --fg-3: #5a5a5f;
+  --accent: #e7c479;
+  --accent-soft: rgba(231,196,121,0.12);
+  --accent-line: rgba(231,196,121,0.35);
+  --ok:     #87c896;
+  --warn:   #e7c479;
+  --danger: #e08284;
+  --info:   #b6a8d6;
+  --ok-soft:     rgba(135,200,150,0.12);
+  --warn-soft:   rgba(231,196,121,0.12);
+  --danger-soft: rgba(224,130,132,0.12);
+  --info-soft:   rgba(182,168,214,0.14);
+  --ok-line: rgba(135,200,150,0.35);
+  --warn-line: rgba(231,196,121,0.35);
+  --danger-line: rgba(224,130,132,0.35);
+  --line-3: #36363d;
+  --accent-on: #131315;
+}
+
+/* ─── 03 Solar ──── warm, paper-light theme */
+body[data-theme="solar"] {
+  --bg-0: #f6f1e7;
+  --bg-1: #fbf7ee;
+  --bg-2: #f1ebdd;
+  --bg-3: #e8e0cd;
+  --bg-4: #ddd2b8;
+  --line: #e6dcc4;
+  --line-2: #d6c9aa;
+  --fg-0: #2a2519;
+  --fg-1: #4a4332;
+  --fg-2: #756c54;
+  --fg-3: #9a9176;
+  --accent: #b15c2b;
+  --accent-soft: rgba(177,92,43,0.10);
+  --accent-line: rgba(177,92,43,0.35);
+  --ok:     #4f8f4f;
+  --warn:   #b78a1f;
+  --danger: #b14b3e;
+  --info:   #7a5db1;
+  --ok-soft:     rgba(79,143,79,0.12);
+  --warn-soft:   rgba(183,138,31,0.14);
+  --danger-soft: rgba(177,75,62,0.12);
+  --info-soft:   rgba(122,93,177,0.12);
+  --ok-line: rgba(79,143,79,0.4);
+  --warn-line: rgba(183,138,31,0.45);
+  --danger-line: rgba(177,75,62,0.4);
+  --line-3: #c5b896;
+  --accent-on: #fbf7ee;
+}
+body[data-theme="solar"] .term { background: #2a2519; color: #e6dcc4; }
+body[data-theme="solar"] .term .ts { color: #9a9176; }
+body[data-theme="solar"] .term .ln .msg .k { color: #9a9176; }
+body[data-theme="solar"] .term .ln .msg .v { color: #e7c479; }
+body[data-theme="solar"] ::-webkit-scrollbar-thumb { background: #d6c9aa; border-color: var(--bg-0); }
+
+/* ─── 04 Indigo ──── deep midnight + violet accent */
+body[data-theme="indigo"] {
+  --bg-0: #0a0c1a;
+  --bg-1: #11142a;
+  --bg-2: #181c38;
+  --bg-3: #222648;
+  --bg-4: #2a2f55;
+  --line: #1c2042;
+  --line-2: #2a2f55;
+  --fg-0: #e8eaff;
+  --fg-1: #b8bdee;
+  --fg-2: #8186b8;
+  --fg-3: #5a5e8a;
+  --accent: #8c7cff;
+  --accent-soft: rgba(140,124,255,0.14);
+  --accent-line: rgba(140,124,255,0.4);
+  --ok:     #7be3b8;
+  --warn:   #ffce6e;
+  --danger: #ff7b9c;
+  --info:   #6fb6ff;
+  --ok-soft:     rgba(123,227,184,0.12);
+  --warn-soft:   rgba(255,206,110,0.13);
+  --danger-soft: rgba(255,123,156,0.13);
+  --info-soft:   rgba(111,182,255,0.14);
+  --ok-line: rgba(123,227,184,0.35);
+  --warn-line: rgba(255,206,110,0.4);
+  --danger-line: rgba(255,123,156,0.4);
+  --line-3: #383d62;
+  --accent-on: #0a0c1a;
+}
+
+/* ─── 05 Forest ──── deep green-grey, muted */
+body[data-theme="forest"] {
+  --bg-0: #0c1110;
+  --bg-1: #121817;
+  --bg-2: #1a201f;
+  --bg-3: #232a28;
+  --bg-4: #2c3331;
+  --line: #1d2422;
+  --line-2: #2a3230;
+  --fg-0: #e6eae6;
+  --fg-1: #b6c0bb;
+  --fg-2: #828c87;
+  --fg-3: #5a635e;
+  --accent: #84d2a8;
+  --accent-soft: rgba(132,210,168,0.12);
+  --accent-line: rgba(132,210,168,0.35);
+  --ok:     #84d2a8;
+  --warn:   #e8c781;
+  --danger: #e58a82;
+  --info:   #8fc4e8;
+  --ok-soft:     rgba(132,210,168,0.12);
+  --warn-soft:   rgba(232,199,129,0.13);
+  --danger-soft: rgba(229,138,130,0.12);
+  --info-soft:   rgba(143,196,232,0.13);
+  --ok-line: rgba(132,210,168,0.35);
+  --warn-line: rgba(232,199,129,0.4);
+  --danger-line: rgba(229,138,130,0.4);
+  --line-3: #36403d;
+  --accent-on: #0c1110;
+}
+
+/* ─── 06 Crimson ──── high-stakes red accent on dark */
+body[data-theme="crimson"] {
+  --bg-0: #0d0a0a;
+  --bg-1: #15110f;
+  --bg-2: #1d1816;
+  --bg-3: #271f1c;
+  --bg-4: #322823;
+  --line: #21191a;
+  --line-2: #2e2422;
+  --fg-0: #ede4e2;
+  --fg-1: #c0b3b0;
+  --fg-2: #8a7d7a;
+  --fg-3: #5e5350;
+  --accent: #ff7066;
+  --accent-soft: rgba(255,112,102,0.13);
+  --accent-line: rgba(255,112,102,0.4);
+  --ok:     #c0d97f;
+  --warn:   #f0c060;
+  --danger: #ff6e75;
+  --info:   #ff9d75;
+  --ok-soft:     rgba(192,217,127,0.12);
+  --warn-soft:   rgba(240,192,96,0.13);
+  --danger-soft: rgba(255,110,117,0.13);
+  --info-soft:   rgba(255,157,117,0.13);
+  --ok-line: rgba(192,217,127,0.35);
+  --warn-line: rgba(240,192,96,0.4);
+  --danger-line: rgba(255,110,117,0.45);
+  --line-3: #3a2c2a;
+  --accent-on: #15110f;
+}
+
+/* tweaks panel ↔ theme: hide host-protocol-only elements appropriately */
+body[data-theme="solar"] .sb-brand-mark {
+  background: linear-gradient(135deg, #b15c2b 0%, #e08c5a 100%);
+  color: #fbf7ee;
+}
+body[data-theme="indigo"] .sb-brand-mark { background: linear-gradient(135deg, #8c7cff 0%, #6fb6ff 100%); color: #0a0c1a; }
+body[data-theme="forest"] .sb-brand-mark { background: linear-gradient(135deg, #84d2a8 0%, #5fa386 100%); color: #0c1110; }
+body[data-theme="crimson"] .sb-brand-mark { background: linear-gradient(135deg, #ff7066 0%, #c8413a 100%); color: #15110f; }
+body[data-theme="carbon"] .sb-brand-mark { background: linear-gradient(135deg, #e7c479 0%, #b89548 100%); color: #131315; }
