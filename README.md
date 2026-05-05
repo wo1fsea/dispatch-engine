@@ -75,6 +75,7 @@ python3 scripts/de.py version
 python3 scripts/de.py run --help
 python3 scripts/de.py cancel --help
 python3 scripts/de.py stop --help
+python3 scripts/de.py dashboard --help
 ```
 
 Target repo smoke checks after importing a plan:
@@ -86,6 +87,7 @@ python3 scripts/de.py run <repo> --provider codex --dry-run
 python3 scripts/de.py run <repo> --provider claude --dry-run
 python3 scripts/de.py status <repo>
 python3 scripts/de.py tail <repo>
+python3 scripts/de.py dashboard <repo> --detach --json
 ```
 
 `de run <repo>` launches a foreground provider CLI coordinator for the latest
@@ -139,12 +141,16 @@ python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --detach --json
 ```
 
 Interactive Codex remains the external operator: it reads target repo
 instructions, prepares the explicit plan, keeps the user in the loop, asks for
 decisions, reviews evidence, and polls Codex-facing state surfaces such as
-`status --json`, `events --since`, `alerts --json`, and `tail`. After explicit
+`status --json`, `events --since`, `alerts --json`, and `tail`. When a visual
+surface is useful, Codex can also launch or reuse the local read-only
+dashboard observer with `de dashboard` and open the returned URL in the Codex
+browser. After explicit
 user approval, Codex can use `resolve-decision` to record a selected option.
 After an allowed four-heartbeat autonomous technical fallback, Codex records
 the selected option with the Codex-facing autonomous flags:

@@ -3,25 +3,30 @@ spec_id: rfc-0024-dashboard-autostart-observer
 language: en-US
 audience: agent
 doc_type: spec
-status: active
-implementation: partial
-validation: partial
-updated: 2026-05-05
+status: ready-review
+implementation: complete
+validation: passed
+updated: 2026-05-06
 ---
 
 # Status
 
 ## Summary
 
-The read-only Dispatch Engine dashboard observer baseline and operator guidance
-are in place and validated. This is not yet full prototype parity. The
-prototype also includes theme/density controls, keyboard navigation, run
-switching, searchable plan tree, clickable agent detail, modals, state-specific
-overlays, and run history comparison. Those missing surfaces are now captured
-as follow-up workstreams in this spec. The dogfood DE run was cancelled after
-main-session validation because the final provider-native validation worker did
-not produce a terminal report; that framework issue is tracked in GitHub issue
-#20.
+The read-only Dispatch Engine dashboard observer and prototype-parity baseline
+are locally committed at `a1565dd`. The dashboard now serves from the skill
+root through `de dashboard`, opens as a Codex browser observer, and includes
+overview, agents, plan/workstreams, decisions, capabilities, validators,
+alerts, history, logs, theme/density preferences, command-preview modals,
+state overlays, and event-tail filtering/collapse/resize. It remains
+read-only: dashboard viewing and browser preferences must not mutate
+`.dispatch/` runtime evidence.
+
+Validation passed locally with focused dashboard tests, full unittest
+discovery, JavaScript syntax checking, and whitespace checks. Browser visual
+review found and fixed several responsive and prototype-parity defects. Remote
+push/install sync remain follow-up project operations outside this spec
+baseline.
 
 ## Workstreams
 
@@ -146,7 +151,7 @@ not produce a terminal report; that framework issue is tracked in GitHub issue
 ## Spec Handoff
 
 - Spec path: `specs/rfc-0024-dashboard-autostart-observer`
-- Status: active; observer baseline validated, full prototype parity pending
+- Status: ready-review; local prototype-parity baseline validated
 - Spec type: runtime/frontend feature
 - Open questions: write actions and tokenized localhost access are follow-ups
 - Prototype fixture:
@@ -156,17 +161,16 @@ not produce a terminal report; that framework issue is tracked in GitHub issue
   `04-theme-settings-keyboard`, `05-agent-detail`, `06-plan-explorer`,
   `07-modals-command-previews`, `08-history-run-switcher`,
   `09-state-overlays`, `10-parity-validation`
-- Next owner: workers for planned prototype-parity workstreams; maintainers for
-  issue #20 stale validation-worker follow-up
-- Validation expectation: existing baseline checks plus theme matrix, keyboard
-  shortcuts, agent-detail click, modal open/close, plan search, run history
-  compare, state overlays, desktop/mobile browser screenshots, and console
-  error checks
+- Next owner: maintainer/operator for push, installed-skill sync, and the
+  validator-role policy follow-up
+- Validation expectation: continue using existing baseline checks plus browser
+  visual review for future UI changes
 - Completion report expectation: include a data parity report that lists every
   prototype surface, its real runtime data source or missing source, whether it
   is live/empty-state/fixture-only/blocked, and any Dispatch Engine API/runtime
   follow-up issues
-- Ready to implement: yes, for workstreams 04-10
+- Ready to implement: completed locally; follow-ups should become separate
+  specs/issues if they require runtime behavior changes
 
 ## 2026-05-06 Interactive Review Follow-up
 
@@ -177,3 +181,12 @@ not produce a terminal report; that framework issue is tracked in GitHub issue
 - Tail height is stored only as a browser-local preference
   `dispatch-engine.dashboard.tailHeight`; no `.dispatch/` runtime evidence is
   mutated by dashboard viewing or resizing.
+- Validators page semantics were clarified after review: it shows registered
+  `role: "validator"` agents and role-specific validation evidence. The current
+  dashboard dogfood run has no validator agents, so the empty Validators page
+  is expected rather than a data-load failure.
+- Local baseline committed as `a1565dd` after validation:
+  `node --check dashboard/app.js`,
+  `PYTHONPATH=scripts python3 -m unittest tests.test_dashboard_observer`,
+  `PYTHONPATH=scripts python3 -m unittest discover -s tests`, and
+  `git diff --check`.
