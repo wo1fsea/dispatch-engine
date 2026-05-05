@@ -192,7 +192,7 @@ def launch_run_coordinator(
             encoding="utf-8",
         ) as stderr:
             completed = subprocess.run(
-                argv,
+                [executable_path, *argv[1:]],
                 cwd=repo_root,
                 stdout=stdout,
                 stderr=stderr,
@@ -350,4 +350,4 @@ def _mark_coordinator_finished(
 
 
 def _run_relative_file(run_state_dir: Path, path: Path) -> str:
-    return f".dispatch/runs/{run_state_dir.name}/{path.relative_to(run_state_dir)}"
+    return f".dispatch/runs/{run_state_dir.name}/{path.relative_to(run_state_dir).as_posix()}"

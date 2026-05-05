@@ -93,12 +93,24 @@ class _fake_provider_env:
     def __enter__(self) -> dict[str, str]:
         self._tmp = tempfile.TemporaryDirectory()
         bin_dir = Path(self._tmp.name)
-        executable = bin_dir / self.executable_name
-        executable.write_text(
-            "#!/bin/sh\nprintf 'fake copied-skill provider executed\\n'\nexit 0\n",
-            encoding="utf-8",
-        )
-        executable.chmod(0o755)
+        if os.name == "nt":
+            script = bin_dir / f"{self.executable_name}.py"
+            script.write_text(
+                "print('fake copied-skill provider executed')\nraise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            executable = bin_dir / f"{self.executable_name}.cmd"
+            executable.write_text(
+                f'@echo off\r\n"{sys.executable}" "%~dp0{self.executable_name}.py" %*\r\nexit /b %ERRORLEVEL%\r\n',
+                encoding="utf-8",
+            )
+        else:
+            executable = bin_dir / self.executable_name
+            executable.write_text(
+                "#!/bin/sh\nprintf 'fake copied-skill provider executed\\n'\nexit 0\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
         env = dict(os.environ)
         env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
         return env

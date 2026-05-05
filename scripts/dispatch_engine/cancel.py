@@ -30,6 +30,8 @@ class DefaultProcessController:
             os.kill(pid, 0)
         except ProcessLookupError:
             return False
+        except SystemError:
+            return False
         except OSError as exc:
             if exc.errno == errno.ESRCH:
                 return False

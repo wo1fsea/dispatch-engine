@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -244,12 +245,24 @@ class _fake_provider_path:
     def __enter__(self) -> Path:
         self._tmp = tempfile.TemporaryDirectory()
         bin_dir = Path(self._tmp.name)
-        executable = bin_dir / self.executable_name
-        executable.write_text(
-            "#!/bin/sh\nprintf 'fake provider executed\\n'\nexit 0\n",
-            encoding="utf-8",
-        )
-        executable.chmod(0o755)
+        if os.name == "nt":
+            script = bin_dir / f"{self.executable_name}.py"
+            script.write_text(
+                "print('fake provider executed')\nraise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            executable = bin_dir / f"{self.executable_name}.cmd"
+            executable.write_text(
+                f'@echo off\r\n"{sys.executable}" "%~dp0{self.executable_name}.py" %*\r\nexit /b %ERRORLEVEL%\r\n',
+                encoding="utf-8",
+            )
+        else:
+            executable = bin_dir / self.executable_name
+            executable.write_text(
+                "#!/bin/sh\nprintf 'fake provider executed\\n'\nexit 0\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
         self._old_path = os.environ.get("PATH", "")
         os.environ["PATH"] = f"{bin_dir}{os.pathsep}{self._old_path}"
         return executable
