@@ -121,6 +121,64 @@ class AgentCapabilityProfilesTests(unittest.TestCase):
                 ],
             )
 
+    def test_import_warns_when_github_issue_evidence_needs_denied_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _plan()
+            plan["workstreams"][0]["title"] = "GitHub issue evidence review"
+            plan["workstreams"][0]["scope"] = (
+                "Inspect GitHub issues #20-#24 before closing the dogfood report."
+            )
+            plan["workstreams"][0]["validation"] = [
+                "Record local validation without gh issue view."
+            ]
+
+            state_dir = _import_plan(repo, plan)
+            workstream = json.loads((state_dir / "workstreams" / "01-capabilities.json").read_text())
+
+            self.assertEqual(
+                workstream.get("validation_warnings"),
+                [
+                    {
+                        "code": "issue_evidence_requires_network_access",
+                        "capability": "network_access",
+                        "granted_mode": "none",
+                        "source": "title/scope/validation",
+                        "message": (
+                            "Workstream appears to require GitHub issue evidence but "
+                            "capability_profile.network_access is none. Grant explicit "
+                            "read-only network access, record a local-only evidence "
+                            "strategy, or block before dispatch."
+                        ),
+                    }
+                ],
+            )
+
+    def test_import_does_not_warn_for_issue_evidence_with_read_network_grant(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _plan()
+            plan["workstreams"][0]["title"] = "GitHub issue evidence review"
+            plan["workstreams"][0]["scope"] = (
+                "Inspect GitHub issues #20-#24 before closing the dogfood report."
+            )
+            plan["workstreams"][0]["capability_profile"] = {
+                "schema_version": 1,
+                "profile_id": "worker-standard",
+                "repo_write_scope": {
+                    "assigned_files": ["scripts/dispatch_engine/agents.py"],
+                    "allowed_write_roots": ["tests/"],
+                },
+                "capabilities": {
+                    "network_access": {"mode": "read-only-public", "allowlist": []}
+                },
+            }
+
+            state_dir = _import_plan(repo, plan)
+            workstream = json.loads((state_dir / "workstreams" / "01-capabilities.json").read_text())
+
+            self.assertNotIn("validation_warnings", workstream)
+
     def test_registration_grants_profiles_for_worker_reviewer_and_validator(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

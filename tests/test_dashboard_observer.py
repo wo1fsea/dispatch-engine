@@ -440,6 +440,53 @@ class DashboardObserverTests(unittest.TestCase):
             finally:
                 _stop_dashboard(repo, run["run_id"])
 
+    def test_agent_detail_api_exposes_validator_report_schema_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo)
+            state_dir = Path(run["state_dir"])
+            register_agent(
+                state_dir,
+                agent_id="validator-a",
+                role="validator",
+                provider="codex",
+                profile="codex-spawn-agent-validator",
+                status="completed",
+                workstream="01-dashboard",
+            )
+            write_validator_report(
+                state_dir,
+                "validator-a",
+                {
+                    "schema_version": 1,
+                    "agent_id": "validator-a",
+                    "role": "validator",
+                    "workstream": "01-dashboard",
+                    "status": "passed",
+                    "summary": "Focused validation passed but artifacts are missing.",
+                    "command": "PYTHONPATH=scripts python3 -m unittest tests.test_dashboard_observer",
+                    "output_summary": "tests passed",
+                    "artifacts": [],
+                    "not_run_reason": "",
+                },
+            )
+            server = _run_cli_json(["dashboard", str(repo), "--run-id", run["run_id"], "--detach", "--json"])
+            before = _evidence_snapshot(state_dir)
+            try:
+                detail = _get_json(server["url"] + "/api/agent/validator-a")
+
+                diagnostics = detail["validation_evidence"]["report_schema_diagnostics"]
+                self.assertEqual([item["violation"] for item in diagnostics], ["missing_validation_evidence"])
+                self.assertEqual(diagnostics[0]["details"]["missing_fields"], ["artifacts"])
+                self.assertEqual(
+                    diagnostics[0]["details"]["repair_action"],
+                    "add validator artifact references or change the report to skipped with not_run_reason",
+                )
+                self.assertFalse(detail["validation_evidence"]["empty_states"]["report_schema_diagnostics"])
+                self.assertEqual(_evidence_snapshot(state_dir), before)
+            finally:
+                _stop_dashboard(repo, run["run_id"])
+
     def test_agent_detail_api_reports_missing_detail_without_mutating(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -501,6 +548,82 @@ class DashboardObserverTests(unittest.TestCase):
                 self.assertEqual(payload["next_wakeup_at"], "2026-05-05T01:30:00Z")
                 self.assertEqual(payload["last_observed_cursor"], "event-000010")
                 self.assertFalse(payload["empty_states"]["record"])
+                self.assertEqual(_evidence_snapshot(state_dir), before)
+            finally:
+                _stop_dashboard(repo, run["run_id"])
+
+    def test_host_heartbeat_api_reads_snapshot_written_by_record_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo)
+            state_dir = Path(run["state_dir"])
+            _run_cli_json(
+                [
+                    "record-host-heartbeat",
+                    str(repo),
+                    "--run-id",
+                    run["run_id"],
+                    "--automation-id",
+                    "dispatch-engine-test-heartbeat",
+                    "--owner",
+                    "interactive-codex",
+                    "--status",
+                    "active",
+                    "--interval-seconds",
+                    "900",
+                    "--last-wakeup-at",
+                    "2026-05-05T01:15:00Z",
+                    "--last-observed-cursor",
+                    "event-000010",
+                    "--json",
+                ]
+            )
+            server = _run_cli_json(["dashboard", str(repo), "--run-id", run["run_id"], "--detach", "--json"])
+            before = _evidence_snapshot(state_dir)
+            try:
+                payload = _get_json(server["url"] + "/api/host-heartbeat")
+
+                self.assertEqual(payload["kind"], "host_heartbeat")
+                self.assertEqual(payload["source"], "record")
+                self.assertEqual(payload["source_path"], str(state_dir / "host-heartbeat.json"))
+                self.assertEqual(payload["automation_id"], "dispatch-engine-test-heartbeat")
+                self.assertEqual(payload["effective_status"], "active")
+                self.assertEqual(payload["next_wakeup_at"], "2026-05-05T01:30:00Z")
+                self.assertEqual(_evidence_snapshot(state_dir), before)
+            finally:
+                _stop_dashboard(repo, run["run_id"])
+
+    def test_host_heartbeat_api_ignores_non_run_scoped_snapshot_for_active_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo)
+            state_dir = Path(run["state_dir"])
+            legacy_path = repo / ".dispatch" / "host-heartbeat.json"
+            legacy_path.write_text(
+                json.dumps(
+                    {
+                        "automation_id": "legacy-heartbeat",
+                        "owner": "interactive-codex",
+                        "interval_seconds": 900,
+                        "status": "active",
+                        "last_wakeup_at": "2026-05-05T01:15:00Z",
+                        "next_wakeup_at": "2026-05-05T01:30:00Z",
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            server = _run_cli_json(["dashboard", str(repo), "--run-id", run["run_id"], "--detach", "--json"])
+            before = _evidence_snapshot(state_dir)
+            try:
+                payload = _get_json(server["url"] + "/api/host-heartbeat")
+
+                self.assertEqual(payload["kind"], "host_heartbeat")
+                self.assertEqual(payload["source"], "missing")
+                self.assertEqual(payload["automation_id"], None)
+                self.assertEqual(payload["effective_status"], "missing")
+                self.assertEqual(payload["source_path"], None)
                 self.assertEqual(_evidence_snapshot(state_dir), before)
             finally:
                 _stop_dashboard(repo, run["run_id"])

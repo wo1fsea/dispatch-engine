@@ -15,12 +15,18 @@ when a workstream needs terminal evidence.
   can be accepted.
 - A validator terminal report uses `status: "passed"`, `"failed"`,
   `"blocked"`, or `"skipped"` under `.dispatch/runs/<run-id>/validation/`.
+- A non-skipped validator terminal report must include command evidence,
+  output summary, and non-empty `artifacts`; missing any of those fields is
+  `missing_validation_evidence` and is not clean acceptance evidence.
 - A reviewer terminal report uses `status: "accepted"`,
   `"changes_requested"`, `"blocked"`, or `"failed"` under
   `.dispatch/runs/<run-id>/reviews/`.
 - If validation cannot finish, write a blocked, failed, or skipped terminal
   report with the reason and available evidence instead of leaving only logs,
   stdout, or a stale heartbeat.
+- If validation passed but artifact references were omitted, repair the
+  validator report through durable repair evidence or rerun validation and
+  record artifact references; do not treat the report as cleanly passed.
 - If the run is cancelled before validation completes, the missing terminal
   report remains visible as `incomplete_validation_evidence`; do not describe
   the workstream as accepted.

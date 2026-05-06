@@ -91,3 +91,9 @@ Use the canonical field names above. Legacy aliases such as `files_changed`,
 `validation_run`, `conflicts_or_blockers`, `residual_risk`, `open_questions`,
 `capability_profile`, or `capabilities_used` are only repair/migration inputs
 and should not be emitted by new worker prompts or reports.
+
+If your workstream is `protocol-report-repair` or otherwise asks you to act as
+a repair worker for malformed runtime evidence, you are still a worker and must
+write the canonical worker report shape above. Include `changed_files` and
+`questions` even when they are empty arrays; do not emit legacy aliases as the
+repair-worker output.

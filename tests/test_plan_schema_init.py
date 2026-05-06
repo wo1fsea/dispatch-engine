@@ -151,6 +151,32 @@ class PlanSchemaInitTests(unittest.TestCase):
             )
             self.assertEqual(run["plan"]["diagnostics"], result["plan_diagnostics"])
 
+    def test_validate_adds_workstream_warning_for_issue_evidence_without_network(self) -> None:
+        workstream = _workstream("01-issue-evidence")
+        workstream["title"] = "Issue evidence"
+        workstream["scope"] = "Use GitHub issue evidence to verify issue #26."
+        workstream["validation"] = ["Summarize findings without gh issue view."]
+
+        validated = validate_dispatch_plan(_plan([workstream]))
+
+        self.assertEqual(
+            validated["workstreams"][0].get("validation_warnings"),
+            [
+                {
+                    "code": "issue_evidence_requires_network_access",
+                    "capability": "network_access",
+                    "granted_mode": "none",
+                    "source": "title/scope/validation",
+                    "message": (
+                        "Workstream appears to require GitHub issue evidence but "
+                        "capability_profile.network_access is none. Grant explicit "
+                        "read-only network access, record a local-only evidence "
+                        "strategy, or block before dispatch."
+                    ),
+                }
+            ],
+        )
+
     def test_import_creates_run_state_from_plan_and_preserves_status_tail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

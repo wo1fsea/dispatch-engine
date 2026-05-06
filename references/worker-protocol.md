@@ -64,6 +64,10 @@ reviewer, or validator is not enough to mark it running: the coordinator needs
 provider-native spawn evidence or codex CLI fallback evidence first. Imported
 `validation_warnings` should be handled before dispatch by narrowing
 validation, requesting a capability decision, or blocking the workstream.
+When a warning is `issue_evidence_requires_network_access`, the coordinator
+must either grant explicit read-only `network_access`, record a local-only
+evidence strategy that avoids `gh issue view`, or block the workstream before
+launching the worker.
 
 ## Agent Registration
 
@@ -187,6 +191,10 @@ Agents must stop before using a denied or broader capability. They should record
 the needed capability, requested mode, reason, risk, and validation expectation
 as a blocker or decision request, then wait for the coordinator/operator to
 approve, deny, narrow, or reassign the work.
+Workers must not run `gh issue view` for GitHub issue evidence when their
+profile grants `network_access: none` unless a recorded decision expands the
+grant. If the assignment uses local-only evidence, the worker report should say
+GitHub was not read and identify the local source used instead.
 
 Reviewer acceptance is a separate phase before a workstream is considered
 accepted. A worker report alone is not completion evidence. Final acceptance is

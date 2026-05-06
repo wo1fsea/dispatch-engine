@@ -65,6 +65,31 @@ class RunDryRunTests(unittest.TestCase):
         self.assertEqual(template_path.parent.parent.name, "references")
         self.assertIn("Coordinator-Only Behavior", template_path.read_text(encoding="utf-8"))
 
+    def test_rendered_coordinator_prompt_forbids_synthetic_host_heartbeat_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo, plan_id="plan-001", objective="heartbeat boundary")
+
+            rendered = render_run_dry_run(repo, run_id=run["run_id"], provider="codex")
+            prompt = rendered["prompt_text"]
+            normalized_prompt = " ".join(prompt.split())
+
+            self.assertIn(
+                "Real host heartbeat snapshots must be written only by the outer interactive "
+                "Codex host heartbeat using the host-provided automation id.",
+                normalized_prompt,
+            )
+            self.assertIn("Do not call `record-host-heartbeat`.", prompt)
+            self.assertIn(
+                "Do not synthesize `codex-thread-heartbeat-*` or any other automation id for real runs.",
+                normalized_prompt,
+            )
+            self.assertIn(
+                "Inspect `status --json`, `events --since`, `alerts --json`, and the host "
+                "snapshot as read-only supervision evidence.",
+                normalized_prompt,
+            )
+
     def test_coordinator_prompt_snapshot_and_provider_instruction_are_centralized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

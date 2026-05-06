@@ -136,12 +136,13 @@ Dashboard observer lifecycle is tied to the selected run id. By default
 `dashboard --detach --json` selects the latest run; pass `--run-id <run-id>` to
 inspect or revive a specific historical run. After a detached launch, report the
 dashboard URL for the current run together with the host heartbeat status. When
-`status --json` reports `completed`, `failed`, or `cancelled`, stop the host
-heartbeat and treat any still-open dashboard as terminal historical inspection,
-not live progress. When a continuation run supersedes an older run, launch or
-reuse the dashboard for the continuation run, report the new URL, and label the
-old URL or old `dashboard --status --run-id <old-run-id> --json` result
-stale/superseded unless the user explicitly wants historical inspection.
+`status --json` reports `completed`, `failed`, or `cancelled`, record a stopped
+host heartbeat snapshot with `record-host-heartbeat --status stopped`, stop the
+host heartbeat, and treat any still-open dashboard as terminal historical
+inspection, not live progress. When a continuation run supersedes an older run,
+launch or reuse the dashboard for the continuation run, report the new URL, and
+label the old URL or old `dashboard --status --run-id <old-run-id> --json`
+result stale/superseded unless the user explicitly wants historical inspection.
 
 Recorded dashboard process metadata lives at
 `.dispatch/runs/<run-id>/dashboard/server.json` and is also summarized by
@@ -154,9 +155,12 @@ Detached runs do not automatically wake the foreground Codex chat. After every
 successful interactive `run --detach`, interactive Codex must create a
 host-layer thread heartbeat when the current host supports wakeups. The
 heartbeat wakes Codex, and Codex then reads Dispatch Engine state and reports
-only material changes. When the run completes, fails, or is cancelled, Codex
-must stop the heartbeat. Dispatch Engine does not send chat messages or own the
-host wakeup. The default heartbeat interval is 15 minutes. If the same pending
+only material changes. After every heartbeat check, Codex must write
+`.dispatch/runs/<run-id>/host-heartbeat.json` with `record-host-heartbeat` so
+the dashboard can show host heartbeat freshness. When the run completes, fails,
+or is cancelled, Codex must write a stopped snapshot before stopping the
+heartbeat. Dispatch Engine does not send chat messages or own the host wakeup.
+The default heartbeat interval is 15 minutes. If the same pending
 technical decision remains unanswered across four consecutive heartbeat checks,
 outer Codex plus the heartbeat owns the eligibility judgment and may select a
 conservative, reversible option. Record it with `resolve-decision
@@ -169,6 +173,12 @@ such autonomous choices.
 See `references/heartbeat-observation.md` for the required heartbeat lifecycle,
 recommended intervals, the heartbeat prompt shape, material-change rules, and
 fallback wording when wakeups are unavailable.
+
+The host heartbeat snapshot is a real host automation record, not coordinator
+progress evidence. Coordinators may read and summarize it, but they must not
+synthesize wakeup timestamps or call `record-host-heartbeat` with a synthetic
+automation id such as `codex-thread-heartbeat-<run-id>`; the CLI rejects that
+reserved id family so coordinator flow cannot reset the visible countdown.
 
 The provider process launched by `de run` is a coordinator only. It may plan, dispatch, monitor, summarize, request decisions, and write Dispatch Engine runtime state under `.dispatch/`, but it must not directly implement project-file changes. Project implementation belongs to registered workers, reviewers, or validators using provider-native spawn mechanisms, normalized capability profiles, and the shared `.dispatch/` observability contract.
 
@@ -210,6 +220,7 @@ python3 "$DE_SKILL/scripts/de.py" status "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" events "$TARGET" --since <event-id> --json
 python3 "$DE_SKILL/scripts/de.py" alerts "$TARGET" --json
 python3 "$DE_SKILL/scripts/de.py" tail "$TARGET" --json
+python3 "$DE_SKILL/scripts/de.py" record-host-heartbeat "$TARGET" --run-id <run-id> --automation-id <host-automation-id> --owner interactive-codex --status active --interval-seconds 900 --last-wakeup-at <timestamp> --last-observed-cursor <event-id> --json
 python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --detach --json
 python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --status --json
 python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --stop --json
@@ -345,7 +356,8 @@ python3 "$DE_SKILL/scripts/de.py" alerts "$TARGET" --run-id <run-id> --json
 ```
 
 Then report the cancelled terminal state and reason once, and stop any
-host-layer heartbeat for the run.
+host-layer heartbeat for the run after recording
+`.dispatch/runs/<run-id>/host-heartbeat.json` with `--status stopped`.
 
 Live coordinator launches write:
 
@@ -395,6 +407,7 @@ python3 scripts/de.py events --help
 python3 scripts/de.py alerts --help
 python3 scripts/de.py cancel --help
 python3 scripts/de.py dashboard --help
+python3 scripts/de.py record-host-heartbeat --help
 python3 scripts/de.py stop --help
 python3 scripts/de.py resolve-decision --help
 python3 scripts/de.py run --help

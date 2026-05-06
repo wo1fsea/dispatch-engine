@@ -86,6 +86,24 @@ class ReviewValidatorProtocolTests(unittest.TestCase):
 
             self.assertEqual([item["violation"] for item in violations], ["missing_validation_evidence"])
             self.assertEqual(violations[0]["details"]["missing_fields"], ["artifacts", "output_summary"])
+            self.assertEqual(
+                violations[0]["details"]["repair_action"],
+                "add validator artifact references and output summary or change the report to skipped with not_run_reason",
+            )
+
+    def test_validator_report_missing_artifacts_field_is_validation_evidence_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            _register_validator(state_dir)
+            report = _validator_report(status="passed")
+            report.pop("artifacts")
+            write_validator_report(state_dir, "validator-001", report)
+
+            violations = validate_review_validator_report(state_dir, "validator-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["missing_validation_evidence"])
+            self.assertEqual(violations[0]["details"]["missing_fields"], ["artifacts"])
 
     def test_missing_validator_report_uses_report_schema_diagnostic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -341,6 +359,23 @@ class ReviewValidatorProtocolTests(unittest.TestCase):
         self.assertIn("terminal report", text)
         self.assertIn("stale_validation_worker_without_report", text)
         self.assertIn("incomplete_validation_evidence", text)
+
+    def test_protocol_guidance_names_missing_validator_artifact_gate(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        guidance_paths = [
+            root / "references" / "review-validator-protocol.md",
+            root / "references" / "prompts" / "validator-protocol.md",
+            root / "references" / "prompts" / "reviewer-validator-protocol.md",
+            root / "references" / "prompts" / "coordinator-protocol.md",
+        ]
+
+        texts = {path.name: path.read_text(encoding="utf-8") for path in guidance_paths}
+
+        for text in texts.values():
+            self.assertIn("missing_validation_evidence", text)
+        self.assertIn("repair_action", texts["review-validator-protocol.md"])
+        self.assertIn("not clean acceptance evidence", texts["coordinator-protocol.md"])
+        self.assertIn("non-empty `artifacts`", texts["validator-protocol.md"])
 
 
 def _register_reviewer(state_dir: Path) -> dict:

@@ -170,6 +170,96 @@ class CodexFacingControlSurfaceTests(unittest.TestCase):
             self.assertEqual(before_events, (state_dir / "events.jsonl").read_text(encoding="utf-8"))
             self.assertEqual(before_decisions, (state_dir / "decisions.jsonl").read_text(encoding="utf-8"))
 
+    def test_record_host_heartbeat_command_writes_run_scoped_snapshot_and_derives_next_wakeup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "record-host-heartbeat",
+                        str(repo),
+                        "--run-id",
+                        state_dir.name,
+                        "--automation-id",
+                        "dispatch-engine-test-heartbeat",
+                        "--owner",
+                        "interactive-codex",
+                        "--status",
+                        "active",
+                        "--interval-seconds",
+                        "900",
+                        "--last-wakeup-at",
+                        "2026-05-05T01:15:00Z",
+                        "--last-observed-cursor",
+                        "event-000010",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            heartbeat_path = state_dir / "host-heartbeat.json"
+            self.assertEqual(payload["kind"], "host_heartbeat_record")
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["run_id"], state_dir.name)
+            self.assertEqual(payload["snapshot_path"], str(heartbeat_path))
+            self.assertTrue(heartbeat_path.is_file())
+            self.assertFalse((state_dir / ".host-heartbeat.json.tmp").exists())
+
+            snapshot = json.loads(heartbeat_path.read_text(encoding="utf-8"))
+            self.assertEqual(snapshot["schema_version"], 1)
+            self.assertEqual(snapshot["automation_id"], "dispatch-engine-test-heartbeat")
+            self.assertEqual(snapshot["owner"], "interactive-codex")
+            self.assertEqual(snapshot["status"], "active")
+            self.assertEqual(snapshot["interval_seconds"], 900)
+            self.assertEqual(snapshot["last_wakeup_at"], "2026-05-05T01:15:00Z")
+            self.assertEqual(snapshot["next_wakeup_at"], "2026-05-05T01:30:00Z")
+            self.assertEqual(snapshot["last_observed_cursor"], "event-000010")
+            self.assertIsNone(snapshot["stopped_at"])
+            self.assertIsNone(snapshot["stop_reason"])
+            self.assertTrue(snapshot["updated_at"].endswith("Z"))
+
+    def test_record_host_heartbeat_rejects_synthetic_coordinator_automation_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "record-host-heartbeat",
+                        str(repo),
+                        "--run-id",
+                        state_dir.name,
+                        "--automation-id",
+                        f"codex-thread-heartbeat-{state_dir.name}",
+                        "--owner",
+                        "interactive-codex",
+                        "--status",
+                        "active",
+                        "--interval-seconds",
+                        "900",
+                        "--last-wakeup-at",
+                        "2026-05-05T01:15:00Z",
+                        "--last-observed-cursor",
+                        "event-000010",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["kind"], "error")
+            self.assertEqual(payload["status"], "invalid_host_heartbeat_producer")
+            self.assertIn("outer interactive Codex heartbeat producer", payload["summary"])
+            self.assertEqual(payload["run_id"], state_dir.name)
+            self.assertFalse((state_dir / "host-heartbeat.json").exists())
+            self.assertFalse((state_dir / ".host-heartbeat.json.tmp").exists())
+
     def test_resolve_decision_command_validates_option_before_recording_resolution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

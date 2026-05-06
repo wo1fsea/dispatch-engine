@@ -1264,12 +1264,12 @@
     const metaOne = stopped
       ? safe(heartbeat.stop_reason, "terminal run reached; watcher should be off")
       : missing
-        ? "No host-heartbeat record found under .dispatch for this run."
+        ? "No run-scoped host-heartbeat.json snapshot found for this run."
         : pending.length ? `${Math.min(3, pending.length)} of 4 unanswered · ${safe(pending[0] && pending[0].id, "decision")}` : "no pending user decision";
     const metaTwo = stopped
       ? "no autonomous fallback while stopped"
       : missing
-        ? "Interactive Codex should create/update the host heartbeat snapshot."
+        ? "Interactive Codex should create/update the run heartbeat snapshot."
         : risk ? `${risk} more miss → autonomous-technical eligibility` : "autonomous fallback not armed";
     return panel("Host heartbeat", "interval=15m · owner=interactive-codex", el("div", "hb-card", [
       el("div", `hb-ring ${stopped ? "stopped" : missing ? "missing" : ""}`, [

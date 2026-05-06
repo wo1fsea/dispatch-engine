@@ -10,6 +10,7 @@ from typing import Any
 
 from .agents import (
     VALIDATOR_REPORT_SCHEMA_VIOLATIONS,
+    WORKER_REPORT_SCHEMA_VIOLATIONS,
     capability_profile_high_risk_grants,
     detect_protocol_violations,
     list_agents,
@@ -425,7 +426,11 @@ def _report_schema_repair_actions(
     actions: list[dict[str, Any]] = []
     for violation in detected_violations:
         diagnostic = violation.get("violation")
-        if diagnostic not in VALIDATOR_REPORT_SCHEMA_VIOLATIONS:
+        if diagnostic in VALIDATOR_REPORT_SCHEMA_VIOLATIONS:
+            default_role = "validator"
+        elif diagnostic in WORKER_REPORT_SCHEMA_VIOLATIONS:
+            default_role = "worker"
+        else:
             continue
         agent_id = violation.get("agent_id")
         details = violation.get("details", {})
@@ -433,10 +438,19 @@ def _report_schema_repair_actions(
         action: dict[str, Any] = {
             "type": "repair_report_schema",
             "agent_id": agent_id,
-            "role": agent.get("role") or details.get("role") or "validator",
-            "report_path": details.get("report_path"),
+            "role": agent.get("role") or details.get("role") or default_role,
+            "report_path": details.get("report_path") or agent.get("report_path"),
             "diagnostic": diagnostic,
         }
+        missing_fields = details.get("missing_fields")
+        if isinstance(missing_fields, list):
+            action["missing_fields"] = missing_fields
+        legacy_aliases = details.get("legacy_aliases")
+        if isinstance(legacy_aliases, dict):
+            action["legacy_aliases"] = legacy_aliases
+        repair_action = details.get("repair_action")
+        if repair_action:
+            action["repair_action"] = repair_action
         suggested_status = details.get("suggested_status")
         if suggested_status:
             action["suggested_status"] = suggested_status

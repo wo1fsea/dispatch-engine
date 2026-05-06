@@ -289,6 +289,60 @@ class WorkerAdapterProtocolTests(unittest.TestCase):
             self.assertEqual([item["violation"] for item in violations], ["out_of_scope_changed_file"])
             self.assertEqual(violations[0]["details"]["changed_files"], ["README.md"])
 
+    def test_protocol_report_repair_worker_requires_canonical_report_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="report-repair-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="protocol-report-repair",
+                assigned_files=[],
+                allowed_write_roots=[],
+                status="running",
+            )
+            write_worker_report(
+                state_dir,
+                "report-repair-001",
+                {
+                    "status": "completed",
+                    "summary": "Inspected malformed runtime evidence.",
+                    "validation": [],
+                    "blockers": [],
+                    "risks": [],
+                },
+            )
+
+            violations = validate_worker_report(state_dir, "report-repair-001")
+
+            self.assertEqual([item["violation"] for item in violations], ["malformed_worker_report"])
+            self.assertEqual(violations[0]["details"]["missing_fields"], ["changed_files", "questions"])
+
+    def test_protocol_report_repair_worker_accepts_empty_changed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            state_dir = _import_plan(repo)
+            register_worker_agent(
+                state_dir,
+                agent_id="report-repair-001",
+                provider="codex",
+                profile="codex-exec",
+                workstream="protocol-report-repair",
+                assigned_files=[],
+                allowed_write_roots=[],
+                status="running",
+            )
+            complete_worker(
+                state_dir,
+                "report-repair-001",
+                report=_worker_report(changed_files=[]),
+            )
+
+            self.assertEqual(validate_worker_report(state_dir, "report-repair-001"), [])
+            self.assertEqual(detect_protocol_violations(state_dir), [])
+
     def test_allowed_write_root_does_not_match_sibling_prefixes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -476,6 +530,8 @@ class WorkerAdapterProtocolTests(unittest.TestCase):
                 '"capability_profile_id"',
                 '"capabilities_exercised"',
                 '"capability_escalations"',
+                "protocol-report-repair",
+                "repair worker",
                 "Legacy aliases",
             ]
             for fragment in expected_fragments:

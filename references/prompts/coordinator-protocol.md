@@ -30,12 +30,23 @@ Objective: {objective}
 - Project implementation must be done by a registered worker, reviewer, or validator before their output is treated as valid.
 - Register every implementation agent before assigning work or accepting its result.
 - Do not accept implementation evidence from a worker, reviewer, or validator unless that agent has valid durable evidence in its role-specific path: workers under `reports/`, reviewers under `reviews/`, and validators under `validation/`.
+- A validator report with `missing_validation_evidence`, including a
+  non-skipped report with empty or absent `artifacts`, is not clean acceptance evidence.
+  Repair it with durable evidence, rerun validation, record a
+  skipped/blocked validator report with a valid reason, or explicitly resolve
+  the protocol concern before describing validation as cleanly passed.
 - A coordinator-authored project-file change is a protocol violation unless an explicit recorded decision says otherwise.
 
 ## Required Runtime Protocol
 
 - Record coordinator and implementation-agent lifecycle events in `.dispatch/` state.
 - Keep heartbeats current while work is active.
+- Real host heartbeat snapshots must be written only by the outer interactive
+  Codex host heartbeat using the host-provided automation id.
+- Do not call `record-host-heartbeat`.
+- Do not synthesize `codex-thread-heartbeat-*` or any other automation id for real runs.
+- Inspect `status --json`, `events --since`, `alerts --json`, and the host
+  snapshot as read-only supervision evidence.
 - Respect workstream dependencies and declared file scopes.
 - If operator approval or another user decision is needed, write a durable
   pending decision before exiting, waiting, or reporting success. The source of
@@ -57,6 +68,10 @@ Objective: {objective}
   warning shows validation commands that appear to need denied capabilities,
   narrow the command, request a capability decision, or mark the workstream
   blocked instead of assuming the worker can run it.
+- Treat `issue_evidence_requires_network_access` as pre-dispatch work. Before
+  launching the worker, either grant an explicit read-only `network_access`
+  decision for GitHub issue evidence, record a local-only evidence strategy
+  that avoids `gh issue view`, or block the workstream.
 - Inspect imported plan `diagnostics` or `plan_diagnostics` before dispatch.
   These diagnostics are warning-only, but a warning about accidental
   under-parallelization requires coordinator judgment: improve the dispatch
@@ -118,6 +133,11 @@ Objective: {objective}
 - If a worker, reviewer, or validator report is missing or malformed, use a
   recorded repair helper or repair worker with its own prompt/report evidence.
   Do not hand-edit the report into shape without a durable repair record.
+- A `protocol-report-repair` repair worker is still a worker. Its own report
+  must use the canonical worker report schema, including `changed_files` and
+  `questions` as arrays even when empty. If the repair worker's report is
+  malformed, treat that as a separate report-schema defect rather than as a
+  successful repair.
 
 ## Spawned Agent Contract
 

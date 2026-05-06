@@ -7,7 +7,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from dispatch_engine.agents import register_agent, register_worker_agent
+from dispatch_engine.agents import register_agent, register_worker_agent, write_validator_report
 from dispatch_engine.cli import main
 from dispatch_engine.events import append_event, protocol_violation
 from dispatch_engine.plan_schema import import_dispatch_plan
@@ -795,6 +795,112 @@ class StatusTailTests(unittest.TestCase):
             self.assertEqual(
                 [action for action in status["next_actions"] if action["type"] == "repair_protocol_violations"],
                 [{"type": "repair_protocol_violations", "count": 1}],
+            )
+
+    def test_malformed_protocol_report_repair_worker_gets_specific_schema_next_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="repair worker report objective")
+            state_dir = Path(plan["state_dir"])
+            register_worker_agent(
+                state_dir,
+                agent_id="report-repair-001",
+                provider="codex",
+                profile="codex-exec",
+                status="completed",
+                workstream="protocol-report-repair",
+                assigned_files=[],
+                allowed_write_roots=[],
+            )
+            report_path = state_dir / "reports" / "report-repair-001.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "agent_id": "report-repair-001",
+                        "role": "worker",
+                        "workstream": "protocol-report-repair",
+                        "status": "completed",
+                        "summary": "Inspected malformed runtime evidence.",
+                        "validation": [],
+                        "blockers": [],
+                        "risks": [],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertIn(
+                {
+                    "type": "repair_report_schema",
+                    "agent_id": "report-repair-001",
+                    "role": "worker",
+                    "report_path": f".dispatch/runs/{state_dir.name}/reports/report-repair-001.json",
+                    "diagnostic": "malformed_worker_report",
+                    "missing_fields": ["changed_files", "questions"],
+                },
+                status["next_actions"],
+            )
+            self.assertNotIn({"type": "repair_protocol_violations", "count": 1}, status["next_actions"])
+
+    def test_passed_validator_without_artifacts_gets_specific_repair_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="validator artifact objective")
+            state_dir = Path(plan["state_dir"])
+            register_agent(
+                state_dir,
+                agent_id="validator-001",
+                role="validator",
+                provider="codex",
+                profile="codex-exec",
+                status="completed",
+                workstream="01-status-tail",
+            )
+            write_validator_report(
+                state_dir,
+                "validator-001",
+                {
+                    "schema_version": 1,
+                    "agent_id": "validator-001",
+                    "role": "validator",
+                    "workstream": "01-status-tail",
+                    "status": "passed",
+                    "summary": "Validation passed but artifact evidence was omitted.",
+                    "command": "PYTHONPATH=scripts python3 -m unittest tests.test_status_tail",
+                    "output_summary": "tests passed",
+                    "artifacts": [],
+                    "not_run_reason": "",
+                },
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            self.assertIn(
+                {
+                    "type": "repair_report_schema",
+                    "agent_id": "validator-001",
+                    "role": "validator",
+                    "report_path": f".dispatch/runs/{state_dir.name}/validation/validator-001.json",
+                    "diagnostic": "missing_validation_evidence",
+                    "missing_fields": ["artifacts"],
+                    "repair_action": "add validator artifact references or change the report to skipped with not_run_reason",
+                    "suggested_status": "passed",
+                },
+                status["next_actions"],
+            )
+            protocol_alerts = [
+                alert for alert in alerts["alerts"] if alert["type"] == "protocol_violation"
+            ]
+            self.assertEqual([alert["violation"] for alert in protocol_alerts], ["missing_validation_evidence"])
+            self.assertEqual(protocol_alerts[0]["details"]["missing_fields"], ["artifacts"])
+            self.assertEqual(
+                protocol_alerts[0]["details"]["repair_action"],
+                "add validator artifact references or change the report to skipped with not_run_reason",
             )
 
     def test_resolution_record_matches_original_violation_not_future_broad_selector_matches(self) -> None:

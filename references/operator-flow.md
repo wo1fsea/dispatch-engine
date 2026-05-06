@@ -38,7 +38,7 @@ progress or asks for decisions.
 8. Prefer `python3 scripts/de.py run <repo> --detach` from interactive Codex so the conversation can continue while status and tail are polled.
 9. Immediately after every successful interactive detached launch, create a host-layer thread heartbeat for the current thread. This is required when the host supports wakeups, and the default interval is 15 minutes.
 10. For active sessions, launch or reuse the dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available, and record which run id that URL observes.
-11. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
+11. Configure the outer interactive Codex host heartbeat to read Dispatch Engine JSON state, write `.dispatch/runs/<run-id>/host-heartbeat.json` after every check with `record-host-heartbeat`, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
 12. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
 13. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files. These surfaces define terminal, cancelled, stale, and superseded state. The dashboard is a supplementary read-only observer, not a replacement for these supervision checks. For reviewed protocol violations, use `resolve-protocol-violation` to append an audit resolution; this preserves original evidence, affects unresolved protocol-alert overlays only, and never rewrites terminal run state or future worker capability grants.
 14. If the user asks to stop a run, call
@@ -47,7 +47,7 @@ progress or asks for decisions.
     remains canonical. Cancellation is terminal but distinct from failure,
     preserves `.dispatch/` evidence, and should be followed by `status --json`,
     `events --since`, and `alerts --json` before reporting the reason once and
-    stopping the heartbeat.
+    writing a stopped host heartbeat snapshot before stopping the heartbeat.
 15. Resolve decisions explicitly after user approval, using `resolve-decision`.
     Technical decisions may be resolved autonomously only after four
     consecutive unanswered heartbeat checks. Use `resolve-decision
@@ -73,12 +73,20 @@ interprets that state after a user message or a host wakeup such as a thread
 heartbeat automation. For interactive detached runs, that heartbeat is a
 required supervision companion and must be stopped when the run reaches a
 terminal state. A cancelled run should be reported once with its cancellation
-reason from `status --json` before the heartbeat is stopped.
+reason from `status --json` before a stopped `host-heartbeat.json` snapshot is
+recorded and the heartbeat is stopped.
 
 The dashboard observer is separate from that heartbeat. It gives interactive
 Codex and the user a read-only browser view over Dispatch Engine state, but it
 does not wake the foreground chat, resolve decisions, cancel runs, or replace
 the `status --json`, `events --since`, and `alerts --json` supervision loop.
+Its `/api/host-heartbeat` state comes from the run-scoped
+`.dispatch/runs/<run-id>/host-heartbeat.json` snapshot written by the host
+heartbeat loop, or from terminal `run.json` derivation when that snapshot is
+missing.
+Coordinators may report this state, but they must not synthesize a host
+heartbeat or call `record-host-heartbeat` with a coordinator-derived id such as
+`codex-thread-heartbeat-<run-id>`.
 Dashboard lifecycle is tied to the selected run id. If the run reaches
 `completed`, `failed`, or `cancelled`, leave the dashboard available only as a
 terminal historical view and stop describing it as live progress. If a

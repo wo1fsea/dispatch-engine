@@ -3,8 +3,8 @@ workstream_id: 01-implementation
 language: en-US
 audience: agent
 doc_type: workstream
-status: ready
-owner:
+status: validated
+owner: worker-002-issue-evidence-preflight
 branch:
 pr:
 files:
@@ -29,5 +29,11 @@ Validation:
 ```bash
 PYTHONPATH=scripts python3 -m unittest tests.test_plan_schema_init
 PYTHONPATH=scripts python3 -m unittest tests.test_agent_capability_profiles
+rg -n "issue_evidence_requires_network_access|local-only evidence|gh issue view" references scripts tests specs/rfc-0031-issue-evidence-capability-preflight
 git diff --check
 ```
+
+## Activity Log
+
+- 2026-05-06 worker-002-issue-evidence-preflight: implemented warning-only
+  issue-evidence capability diagnostics and coordinator/worker guidance.

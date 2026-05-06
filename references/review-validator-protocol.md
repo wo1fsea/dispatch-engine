@@ -94,6 +94,12 @@ evidence, output summary, and at least one artifact reference. `artifacts`
 must be an array. For `skipped`, it must include a specific `not_run_reason`
 string.
 
+Missing command, output summary, or non-empty `artifacts` on a non-skipped
+validator report is `missing_validation_evidence`. That report remains visible
+as an agent record, but it is not clean validation evidence until repaired,
+skipped with a valid `not_run_reason`, or resolved as an accepted protocol
+concern.
+
 Validators must not use `status: "completed"` for new reports. Version 1
 runtime validation accepts that value only as a narrow compatibility alias for
 `passed` when the report identity matches, aggregate evidence is complete,
@@ -120,13 +126,15 @@ Runtime may emit conservative violations for mechanical problems:
 - validator report JSON that cannot be parsed
 - missing validator fields, invalid field types, identity mismatch, or illegal validator status
 - validator report missing required command, output, artifact, or skip evidence
+  (`missing_validation_evidence`)
 - validator report evidence that contradicts a passed or compatibility-normalized status
 - reported capability use that exceeds the granted profile without a decision id
 - workstream marked accepted, implemented, or completed without registered evidence
 
 For validator report schema failures, `status --json` may include
 `next_actions[]` items with `type: "repair_report_schema"`, the validator
-`agent_id`, `report_path`, diagnostic code, and any suggested canonical status.
+`agent_id`, `report_path`, diagnostic code, missing fields, `repair_action`,
+and any suggested canonical status.
 Coordinators should satisfy those actions through a recorded repair helper or
 repair worker with its own prompt/report evidence. They should not silently
 hand-edit malformed reviewer or validator JSON without a durable repair record.

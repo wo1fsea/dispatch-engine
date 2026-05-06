@@ -25,6 +25,13 @@ SERVICE_START_MARKERS = (
     "docker-compose up",
 )
 NETWORK_ACCESS_MARKERS = ("http://", "https://", "curl ", "wget ")
+ISSUE_EVIDENCE_MARKERS = (
+    "gh issue view",
+    "github issue evidence",
+    "issue evidence",
+    "github issues",
+    "github issue",
+)
 SERIAL_MODES = ("serial",)
 
 
@@ -321,6 +328,13 @@ def _normalize_workstream_capability_profile(workstream: dict[str, Any]) -> None
     except AgentValidationError as exc:
         raise PlanValidationError(f"workstream {workstream.get('id')} capability_profile invalid: {exc}") from exc
     warnings = _validation_capability_warnings(validation_commands, workstream["capability_profile"])
+    issue_evidence_warning = _issue_evidence_capability_warning(
+        workstream,
+        validation_commands,
+        workstream["capability_profile"],
+    )
+    if issue_evidence_warning:
+        warnings.append(issue_evidence_warning)
     if warnings:
         workstream["validation_warnings"] = warnings
 
@@ -375,6 +389,47 @@ def _looks_like_service_start(lowered_command: str) -> bool:
 
 def _looks_like_network_access(lowered_command: str) -> bool:
     return any(marker in lowered_command for marker in NETWORK_ACCESS_MARKERS)
+
+
+def _issue_evidence_capability_warning(
+    workstream: dict[str, Any],
+    validation_commands: list[str],
+    capability_profile: dict[str, Any],
+) -> dict[str, str] | None:
+    capabilities = capability_profile.get("capabilities", {})
+    if not isinstance(capabilities, dict):
+        return None
+    network_mode = _capability_mode(capabilities, "network_access")
+    if network_mode != "none":
+        return None
+    if not _looks_like_issue_evidence(workstream, validation_commands):
+        return None
+    return {
+        "code": "issue_evidence_requires_network_access",
+        "capability": "network_access",
+        "granted_mode": network_mode,
+        "source": "title/scope/validation",
+        "message": (
+            "Workstream appears to require GitHub issue evidence but "
+            "capability_profile.network_access is none. Grant explicit "
+            "read-only network access, record a local-only evidence "
+            "strategy, or block before dispatch."
+        ),
+    }
+
+
+def _looks_like_issue_evidence(
+    workstream: dict[str, Any],
+    validation_commands: list[str],
+) -> bool:
+    text = " ".join(
+        [
+            str(workstream.get("title", "")),
+            str(workstream.get("scope", "")),
+            " ".join(validation_commands),
+        ]
+    ).lower()
+    return any(marker in text for marker in ISSUE_EVIDENCE_MARKERS)
 
 
 def _string_list(value: Any, *, field: str, workstream: dict[str, Any]) -> list[str]:

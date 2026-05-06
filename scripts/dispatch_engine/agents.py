@@ -41,6 +41,12 @@ WORKER_REPORT_REQUIRED_FIELDS = frozenset(
     }
 )
 WORKER_REPORT_STATUSES = frozenset({"completed", "completed_with_concerns", "blocked", "failed"})
+WORKER_REPORT_SCHEMA_VIOLATIONS = frozenset(
+    {
+        "missing_worker_report",
+        "malformed_worker_report",
+    }
+)
 WORKER_REPORT_LEGACY_ALIASES = {
     "files_changed": "changed_files",
     "checks": "validation",
@@ -1197,6 +1203,25 @@ def _validate_validator_report(run_state_dir: Path, agent: dict[str, Any]) -> li
 
     missing = sorted(VALIDATOR_REPORT_REQUIRED_FIELDS - set(report))
     if missing:
+        evidence_missing = [field for field in missing if field == "artifacts"]
+        structural_missing = [field for field in missing if field not in evidence_missing]
+        if evidence_missing and not structural_missing and report.get("status") != "skipped":
+            return [
+                _report_violation(
+                    "missing_validation_evidence",
+                    agent,
+                    {
+                        "report_path": report_path_text,
+                        "missing_fields": evidence_missing,
+                        "evidence_mode": "non_skipped_validator",
+                        "suggested_status": _suggest_validator_status(report),
+                        "repair_action": _validator_evidence_repair_action(
+                            evidence_missing,
+                            skipped=False,
+                        ),
+                    },
+                )
+            ]
         return [
             _report_violation(
                 "missing_validator_fields",
@@ -1249,6 +1274,10 @@ def _validate_validator_report(run_state_dir: Path, agent: dict[str, Any]) -> li
                         else "non_skipped_validator"
                     ),
                     "suggested_status": "skipped" if report.get("status") == "skipped" else _suggest_validator_status(report),
+                    "repair_action": _validator_evidence_repair_action(
+                        missing_evidence,
+                        skipped=report.get("status") == "skipped",
+                    ),
                 },
             )
         ]
@@ -1428,6 +1457,21 @@ def _missing_validator_evidence(report: dict[str, Any]) -> list[str]:
     return sorted(missing)
 
 
+def _validator_evidence_repair_action(missing_fields: list[str], *, skipped: bool) -> str:
+    if skipped:
+        return "add a specific not_run_reason for the skipped validator report"
+
+    labels = {
+        "artifacts": "validator artifact references",
+        "command": "validation command",
+        "output_summary": "output summary",
+    }
+    missing_labels = [labels.get(field, field) for field in missing_fields]
+    return (
+        f"add {_human_join(missing_labels)} or change the report to skipped with not_run_reason"
+    )
+
+
 def _validator_evidence_inconsistency(report: dict[str, Any]) -> dict[str, Any] | None:
     validation = report.get("validation")
     if isinstance(validation, list):
@@ -1520,6 +1564,16 @@ def _suggest_validator_status(report: dict[str, Any]) -> str:
     if report.get("status") == "skipped" or _has_text(report.get("not_run_reason")) and not _has_text(report.get("command")):
         return "skipped"
     return "passed"
+
+
+def _human_join(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
 
 def _report_violation(

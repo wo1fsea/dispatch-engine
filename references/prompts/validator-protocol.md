@@ -51,6 +51,9 @@ Review report available so far:
 - Follow the canonical schema below exactly. `artifacts` is always an array,
   `not_run_reason` is always a string, and non-skipped reports still need
   aggregate `command`, `output_summary`, and at least one artifact path.
+- For `passed`, `failed`, or `blocked`, `artifacts` must be non-empty. A
+  non-skipped validator report missing command, output summary, or non-empty `artifacts`
+  is surfaced as `missing_validation_evidence`.
 - Do not infer acceptance from passing commands. Acceptance judgment belongs to review/coordination guidance.
 - Runtime validation only checks report shape, allowed status values, evidence presence, and identity consistency. Schema diagnostics name exact repair fields.
 - Use `blocked` when validation needs a decision, scope change, dependency override, or operator interpretation.

@@ -70,6 +70,10 @@ python scripts/de.py events <repo> --since event-000001 --json
 python scripts/de.py alerts <repo> --json
 python scripts/de.py cancel <repo> --run-id <run-id> --reason "User asked to stop" --json
 python scripts/de.py stop <repo> --run-id <run-id> --reason "User asked to stop" --json
+python scripts/de.py record-host-heartbeat <repo> --run-id <run-id> \
+  --automation-id <host-automation-id> --owner interactive-codex \
+  --status active --interval-seconds 900 \
+  --last-wakeup-at <iso-timestamp> --last-observed-cursor <event-id> --json
 python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> --json
 python scripts/de.py resolve-decision <repo> --id <decision-id> --option <option-id> \
   --autonomous-technical --unanswered-heartbeats 4 \
@@ -110,9 +114,17 @@ background changes. For every interactive `de run --detach` launch, interactive
 Codex must create a host-provided thread heartbeat/wakeup immediately after the
 detached launch succeeds, then use that heartbeat to check Dispatch Engine
 state until the run reaches a terminal state. When the run completes, fails, or
-is cancelled, interactive Codex must pause, delete, or otherwise stop the
-heartbeat. Dispatch Engine itself does not send chat messages or wake the
-thread; heartbeat lifecycle belongs to the Codex host layer.
+is cancelled, interactive Codex must write a stopped host heartbeat snapshot
+before pausing, deleting, or otherwise stopping the heartbeat. Dispatch Engine
+itself does not send chat messages or wake the thread; heartbeat lifecycle
+belongs to the Codex host layer.
+
+Only the outer interactive Codex host heartbeat producer may write
+`.dispatch/runs/<run-id>/host-heartbeat.json` for a real run. Coordinators may
+read and report host heartbeat state, but they must not synthesize wakeup times
+or call `record-host-heartbeat` with coordinator-derived automation ids such as
+`codex-thread-heartbeat-<run-id>`; the CLI rejects that reserved synthetic id
+family instead of resetting the dashboard countdown.
 
 For active Dispatch Engine sessions, interactive Codex should also launch or
 reuse the read-only dashboard observer with
@@ -127,10 +139,12 @@ Dashboard observer lifecycle follows the run selected by `de dashboard`,
 normally the latest run unless `--run-id` is supplied. After `run --detach`,
 report the dashboard URL for that current run together with the host heartbeat
 status. When `status --json` reports `completed`, `failed`, or `cancelled`,
-report that terminal state once, stop the heartbeat, and treat any still-open
-dashboard as historical read-only inspection rather than live progress. When a
-continuation run supersedes an older run, launch or reuse the dashboard for the
-new run and report the new URL; identify the older dashboard tab or
+report that terminal state once, record `.dispatch/runs/<run-id>/host-heartbeat.json`
+with `record-host-heartbeat --status stopped --stopped-at <iso-timestamp>`,
+stop the heartbeat, and treat any still-open dashboard as historical read-only
+inspection rather than live progress. When a continuation run supersedes an
+older run, launch or reuse the dashboard for the new run and report the new
+URL; identify the older dashboard tab or
 `dashboard --status --run-id <old-run-id> --json` result as stale or superseded
 unless the user explicitly wants historical inspection. Do not stop a recorded
 dashboard observer automatically unless the operator requested cleanup or the
@@ -179,7 +193,7 @@ expectations, escalation rules, and report path.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
 8. Immediately create a host-layer heartbeat monitor for the current thread after every successful interactive detached launch. This is required, not optional, when the host supports thread wakeups. The default interval is 15 minutes.
 9. For active sessions, launch or reuse the read-only dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available, and treat that URL as current only for the selected run id.
-10. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
+10. Configure the outer interactive Codex host heartbeat to read `status --json`, `events --since`, and `alerts --json`, then call `record-host-heartbeat --run-id <run-id> --automation-id <host-automation-id> --owner interactive-codex --status active --interval-seconds <seconds> --last-wakeup-at <iso-timestamp> --last-observed-cursor <event-id> --json` after every check. Report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
 11. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
 12. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, lifecycle diagnostics, terminal state, and superseded-run checks. Treat the dashboard as supplementary read-only visibility, not as the source of truth for supervision.
 13. If the user asks to stop a run, call

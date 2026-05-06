@@ -40,6 +40,9 @@ Request a decision before continuing when any of these are true:
   `capability_profile`, including broader `network_access`, `package_install`,
   `dependency_resolution`, `docker_socket`, `service_start`, `test_execution`,
   `runtime_state_write`, or `github_issue_create`.
+- A workstream needs GitHub issue evidence but has `network_access: none` and
+  no recorded read-only grant or local-only evidence strategy. Running
+  `gh issue view` in that state is capability overreach.
 
 When in doubt, narrow the immediate work, record the blocker, and ask the
 operator rather than guessing.
@@ -61,6 +64,9 @@ Workers:
   criteria.
 - Do not silently use a denied or broader capability. Record the capability,
   requested mode, reason, risk, and validation expectation before continuing.
+- If GitHub issue evidence is requested without network access, either stop for
+  a read-only `network_access` decision or report an explicit local-only
+  evidence strategy before any `gh issue view` command is used.
 - Include blocker ids in worker reports when they paused work.
 
 Reviewers and validators:

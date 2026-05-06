@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import __version__
@@ -19,8 +20,10 @@ from .decisions import (
     STANDARD_AUTONOMOUS_EXCLUDED_CATEGORIES,
     resolve_decision,
 )
+from .events import utc_timestamp
 from .plan_schema import PlanValidationError, import_dispatch_plan
 from .protocol_resolutions import ProtocolResolutionValidationError, resolve_protocol_violation
+from .runs import resolve_run_dir
 from .state import run_alerts, run_events, run_status, tail_events
 from .supervisor import launch_detached_coordinator
 
@@ -61,6 +64,28 @@ def build_parser() -> argparse.ArgumentParser:
     alerts_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
     alerts_parser.add_argument("--run-id", help="Read a specific run id instead of the latest run.")
     _add_json_flag(alerts_parser)
+
+    host_heartbeat_parser = subparsers.add_parser(
+        "record-host-heartbeat",
+        help="Write the host heartbeat snapshot for a Dispatch Engine run.",
+    )
+    host_heartbeat_parser.add_argument(
+        "target",
+        nargs="?",
+        default=".",
+        help="Repository path containing .dispatch state.",
+    )
+    host_heartbeat_parser.add_argument("--run-id", help="Record for a specific run id instead of the latest run.")
+    host_heartbeat_parser.add_argument("--automation-id", required=True, help="Host automation identifier.")
+    host_heartbeat_parser.add_argument("--owner", required=True, help="Host automation owner.")
+    host_heartbeat_parser.add_argument("--status", required=True, help="Host heartbeat status.")
+    host_heartbeat_parser.add_argument("--interval-seconds", type=int, required=True, help="Host heartbeat interval.")
+    host_heartbeat_parser.add_argument("--last-wakeup-at", required=True, help="Last host wakeup timestamp.")
+    host_heartbeat_parser.add_argument("--next-wakeup-at", help="Next scheduled host wakeup timestamp.")
+    host_heartbeat_parser.add_argument("--last-observed-cursor", help="Last observed Dispatch Engine event cursor.")
+    host_heartbeat_parser.add_argument("--stopped-at", help="When the host heartbeat was stopped.")
+    host_heartbeat_parser.add_argument("--stop-reason", help="Why the host heartbeat stopped.")
+    _add_json_flag(host_heartbeat_parser)
 
     dashboard_parser = subparsers.add_parser("dashboard", help="Start or report on a local dashboard observer.")
     dashboard_parser.add_argument("target", nargs="?", default=".", help="Repository path containing .dispatch state.")
@@ -194,6 +219,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "alerts":
         result = run_alerts(Path(args.target), run_id=args.run_id)
+        return _print(result, args.json)
+
+    if args.command == "record-host-heartbeat":
+        result = _record_host_heartbeat_command(
+            Path(args.target),
+            run_id=args.run_id,
+            automation_id=args.automation_id,
+            owner=args.owner,
+            status=args.status,
+            interval_seconds=args.interval_seconds,
+            last_wakeup_at=args.last_wakeup_at,
+            next_wakeup_at=args.next_wakeup_at,
+            last_observed_cursor=args.last_observed_cursor,
+            stopped_at=args.stopped_at,
+            stop_reason=args.stop_reason,
+        )
         return _print(result, args.json)
 
     if args.command == "dashboard":
@@ -358,6 +399,11 @@ def _print(payload: dict, as_json: bool) -> int:
             print(f"{alert['id']} {alert['type']}")
         return 0
 
+    if kind == "host_heartbeat_record":
+        print(f"Recorded host heartbeat for run {payload['run_id']}")
+        print(f"Snapshot: {payload['snapshot_path']}")
+        return 0
+
     if kind == "dashboard":
         print(f"Dashboard: {payload['status']}")
         print(f"Run: {payload['run_id']}")
@@ -489,6 +535,109 @@ def _format_counts(counts: dict) -> str:
     if not counts:
         return "none"
     return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
+def _record_host_heartbeat_command(
+    target: Path,
+    *,
+    run_id: str | None,
+    automation_id: str,
+    owner: str,
+    status: str,
+    interval_seconds: int,
+    last_wakeup_at: str,
+    next_wakeup_at: str | None,
+    last_observed_cursor: str | None,
+    stopped_at: str | None,
+    stop_reason: str | None,
+) -> dict:
+    root = target.resolve()
+    selected = resolve_run_dir(root, run_id)
+    if selected is None:
+        result = {
+            "kind": "error",
+            "status": "missing_run" if run_id else "no_run",
+            "summary": f"Run not found: {run_id}" if run_id else "No Dispatch Engine runs found.",
+        }
+        if run_id:
+            result["run_id"] = run_id
+        return result
+    if interval_seconds <= 0:
+        return {
+            "kind": "error",
+            "status": "invalid_host_heartbeat",
+            "summary": "--interval-seconds must be greater than zero.",
+            "run_id": selected.name,
+            "state_dir": str(selected),
+        }
+    if _is_synthetic_coordinator_heartbeat_id(automation_id):
+        return {
+            "kind": "error",
+            "status": "invalid_host_heartbeat_producer",
+            "summary": (
+                "record-host-heartbeat only accepts the real outer interactive "
+                "Codex heartbeat producer; coordinator-synthesized heartbeat "
+                "automation ids must not write run-scoped host heartbeat snapshots."
+            ),
+            "run_id": selected.name,
+            "state_dir": str(selected),
+        }
+
+    derived_next_wakeup_at = next_wakeup_at or _derive_next_wakeup_at(last_wakeup_at, interval_seconds)
+    if derived_next_wakeup_at is None:
+        return {
+            "kind": "error",
+            "status": "invalid_host_heartbeat",
+            "summary": "--last-wakeup-at must be an ISO-8601 timestamp when --next-wakeup-at is omitted.",
+            "run_id": selected.name,
+            "state_dir": str(selected),
+        }
+
+    snapshot = {
+        "schema_version": 1,
+        "automation_id": automation_id,
+        "owner": owner,
+        "status": status,
+        "interval_seconds": interval_seconds,
+        "last_wakeup_at": last_wakeup_at,
+        "next_wakeup_at": derived_next_wakeup_at,
+        "last_observed_cursor": last_observed_cursor,
+        "stopped_at": stopped_at,
+        "stop_reason": stop_reason,
+        "updated_at": utc_timestamp(),
+    }
+    snapshot_path = selected / "host-heartbeat.json"
+    _write_json_atomic(snapshot_path, snapshot)
+    return {
+        "kind": "host_heartbeat_record",
+        "status": "ok",
+        "summary": f"Recorded host heartbeat snapshot for run {selected.name}.",
+        "run_id": selected.name,
+        "state_dir": str(selected),
+        "snapshot_path": str(snapshot_path),
+        "snapshot": snapshot,
+    }
+
+
+def _is_synthetic_coordinator_heartbeat_id(automation_id: str) -> bool:
+    return automation_id.startswith("codex-thread-heartbeat-")
+
+
+def _derive_next_wakeup_at(last_wakeup_at: str, interval_seconds: int) -> str | None:
+    try:
+        parsed = datetime.fromisoformat(last_wakeup_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    next_wakeup = parsed.astimezone(timezone.utc) + timedelta(seconds=interval_seconds)
+    return next_wakeup.isoformat().replace("+00:00", "Z")
+
+
+def _write_json_atomic(path: Path, record: dict) -> None:
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp_path.replace(path)
 
 
 def _resolve_decision_command(

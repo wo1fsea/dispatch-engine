@@ -19,7 +19,7 @@ import time
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .agents import list_agents, read_agent
+from .agents import list_agents, read_agent, validate_review_validator_report
 from .events import utc_timestamp
 from .runs import resolve_run_dir, runs_dir
 from .state import _normalized_workstream_records, run_alerts, run_events, run_status, tail_events
@@ -668,6 +668,7 @@ def _validation_evidence_detail(
     role = str(agent.get("role") or "")
     applicable = role in {"reviewer", "validator"}
     diagnostics = []
+    report_schema_diagnostics = []
     if applicable:
         status_payload = run_status(repo_root, run_id=run_id)
         diagnostics = [
@@ -679,6 +680,10 @@ def _validation_evidence_detail(
                 "stale_validation_worker_without_report",
             }
         ]
+        report_schema_diagnostics = validate_review_validator_report(
+            run_state_dir,
+            str(agent.get("agent_id") or ""),
+        )
     expected_report_path = report_path
     if not expected_report_path and applicable:
         directory = {"reviewer": "reviews", "validator": "validation"}[role]
@@ -690,10 +695,12 @@ def _validation_evidence_detail(
         "terminal_report_present": terminal_report_present,
         "last_heartbeat_at": agent.get("last_heartbeat_at"),
         "lifecycle_diagnostics": diagnostics,
+        "report_schema_diagnostics": report_schema_diagnostics,
         "empty_states": {
             "terminal_report": not terminal_report_present,
             "last_heartbeat_at": not bool(agent.get("last_heartbeat_at")),
             "lifecycle_diagnostics": not diagnostics,
+            "report_schema_diagnostics": not report_schema_diagnostics,
         },
     }
 
@@ -823,15 +830,10 @@ def _host_heartbeat(repo_root: Path, run_id: str) -> dict[str, Any]:
 
 
 def _read_host_heartbeat_record(repo_root: Path, run_state_dir: Path) -> tuple[Path | None, dict[str, Any] | None]:
-    candidates = [
-        run_state_dir / "host-heartbeat.json",
-        run_state_dir / "dashboard" / "host-heartbeat.json",
-        repo_root / ".dispatch" / "host-heartbeat.json",
-    ]
-    for path in candidates:
-        record = _read_json_object(path)
-        if record is not None:
-            return path, record
+    path = run_state_dir / "host-heartbeat.json"
+    record = _read_json_object(path)
+    if record is not None:
+        return path, record
     return None, None
 
 
