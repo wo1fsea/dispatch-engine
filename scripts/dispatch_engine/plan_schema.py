@@ -25,6 +25,7 @@ SERVICE_START_MARKERS = (
     "docker-compose up",
 )
 NETWORK_ACCESS_MARKERS = ("http://", "https://", "curl ", "wget ")
+SERIAL_MODES = ("serial",)
 
 
 class PlanValidationError(ValueError):
@@ -83,6 +84,7 @@ def validate_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
     _validate_parallel_overlaps(workstreams, dependencies)
     for workstream in workstreams:
         _normalize_workstream_capability_profile(workstream)
+    plan["plan_diagnostics"] = _plan_diagnostics(plan, dependencies)
     return plan
 
 
@@ -113,6 +115,7 @@ def import_dispatch_plan(target: Path, plan_path: Path) -> dict[str, Any]:
             "created_by": plan.get("created_by"),
             "created_at": plan.get("created_at"),
             "target_repo": plan.get("target_repo"),
+            "diagnostics": plan.get("plan_diagnostics", []),
         },
         "repo_context": plan.get("repo_context", {}),
         "review": plan.get("review", {}),
@@ -132,7 +135,107 @@ def import_dispatch_plan(target: Path, plan_path: Path) -> dict[str, Any]:
         "plan_source": str(source_path),
         "workstream_count": len(workstreams),
         "decision_count": len(decisions),
+        "plan_diagnostics": plan.get("plan_diagnostics", []),
     }
+
+
+def _plan_diagnostics(
+    plan: dict[str, Any],
+    dependencies: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    workstreams = plan["workstreams"]
+    diagnostics: list[dict[str, Any]] = []
+
+    if (
+        len(workstreams) > 1
+        and all(_is_serial_workstream(workstream) for workstream in workstreams)
+        and not _has_serial_rationale(plan)
+        and not any(_has_serial_rationale(workstream) for workstream in workstreams)
+    ):
+        diagnostics.append(
+            {
+                "code": "serial_workstreams_without_serial_rationale",
+                "severity": "warning",
+                "message": (
+                    "Multiple workstreams are marked serial without a plan-level or "
+                    "workstream-level serial rationale."
+                ),
+                "workstreams": [str(workstream["id"]) for workstream in workstreams],
+            }
+        )
+
+    missing_parallel_group = [
+        str(workstream["id"])
+        for workstream in workstreams
+        if _has_independent_peer(workstream["id"], workstreams, dependencies)
+        and not workstream.get("parallel_group")
+    ]
+    if missing_parallel_group and not _has_parallelism_metadata(plan):
+        diagnostics.append(
+            {
+                "code": "independent_workstreams_missing_parallel_group",
+                "severity": "warning",
+                "message": (
+                    "Independent workstreams do not declare parallel_group labels or "
+                    "plan-level parallelism metadata."
+                ),
+                "workstreams": missing_parallel_group,
+            }
+        )
+
+    return diagnostics
+
+
+def _is_serial_workstream(workstream: dict[str, Any]) -> bool:
+    return str(workstream.get("mode", "")).lower() in SERIAL_MODES
+
+
+def _has_serial_rationale(item: dict[str, Any]) -> bool:
+    for field in ("serial_rationale", "serial_reason", "serialized_rationale"):
+        if item.get(field):
+            return True
+    parallelism = item.get("parallelism")
+    if isinstance(parallelism, dict):
+        return bool(
+            parallelism.get("serial_rationale")
+            or parallelism.get("serial_reason")
+            or parallelism.get("serialized_rationale")
+            or parallelism.get("intentional_serialization")
+        )
+    return False
+
+
+def _has_parallelism_metadata(plan: dict[str, Any]) -> bool:
+    parallelism = plan.get("parallelism")
+    if not isinstance(parallelism, dict):
+        return False
+    return bool(
+        parallelism.get("concurrency_budget")
+        or parallelism.get("safe_batches")
+        or parallelism.get("batches")
+        or parallelism.get("parallel_groups")
+    )
+
+
+def _has_independent_peer(
+    workstream_id: str,
+    workstreams: list[dict[str, Any]],
+    dependencies: dict[str, list[str]],
+) -> bool:
+    current = next(item for item in workstreams if item["id"] == workstream_id)
+    current_files = _files(current)
+    for peer in workstreams:
+        peer_id = peer["id"]
+        if peer_id == workstream_id:
+            continue
+        if _depends_on(workstream_id, peer_id, dependencies) or _depends_on(
+            peer_id, workstream_id, dependencies
+        ):
+            continue
+        if current_files & _files(peer):
+            continue
+        return True
+    return False
 
 
 def _validate_parallel_overlaps(

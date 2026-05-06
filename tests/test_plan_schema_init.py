@@ -102,6 +102,55 @@ class PlanSchemaInitTests(unittest.TestCase):
         self.assertEqual(coordinated["plan_id"], "plan-001")
         self.assertEqual(dependent["plan_id"], "plan-001")
 
+    def test_validate_adds_warning_only_under_parallelization_diagnostics(self) -> None:
+        validated = validate_dispatch_plan(
+            _plan(
+                [
+                    _workstream("01-runtime", files=["scripts/dispatch_engine/runs.py"]),
+                    _workstream("02-docs", files=["references/orchestrator-loop.md"]),
+                    _workstream("03-tests", files=["tests/test_plan_schema_init.py"]),
+                ]
+            )
+        )
+
+        diagnostics = validated["plan_diagnostics"]
+        self.assertEqual({item["severity"] for item in diagnostics}, {"warning"})
+        self.assertIn(
+            "serial_workstreams_without_serial_rationale",
+            {item["code"] for item in diagnostics},
+        )
+        self.assertIn(
+            "independent_workstreams_missing_parallel_group",
+            {item["code"] for item in diagnostics},
+        )
+
+    def test_import_surfaces_plan_diagnostics_without_rejecting_conservative_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan_path = repo / ".dispatch" / "plans" / "plan-001.json"
+            plan_path.parent.mkdir(parents=True)
+            plan_path.write_text(
+                json.dumps(
+                    _plan(
+                        [
+                            _workstream("01-runtime", files=["scripts/dispatch_engine/runs.py"]),
+                            _workstream("02-docs", files=["references/orchestrator-loop.md"]),
+                        ]
+                    )
+                )
+                + "\n"
+            )
+
+            result = import_dispatch_plan(repo, plan_path)
+            run = json.loads((Path(result["state_dir"]) / "run.json").read_text())
+
+            self.assertEqual(result["status"], "planned")
+            self.assertEqual(
+                result["plan_diagnostics"][0]["code"],
+                "serial_workstreams_without_serial_rationale",
+            )
+            self.assertEqual(run["plan"]["diagnostics"], result["plan_diagnostics"])
+
     def test_import_creates_run_state_from_plan_and_preserves_status_tail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

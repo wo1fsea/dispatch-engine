@@ -19,6 +19,7 @@ from dispatch_engine.agents import (
 )
 from dispatch_engine.cli import main
 from dispatch_engine.dashboard import _run_history, launch_dashboard
+from dispatch_engine.events import append_event
 from dispatch_engine.plan_schema import import_dispatch_plan
 
 
@@ -263,6 +264,97 @@ class DashboardObserverTests(unittest.TestCase):
             finally:
                 _stop_dashboard(repo, run["run_id"])
 
+    def test_status_and_plan_apis_share_durable_workstream_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo)
+            state_dir = Path(run["state_dir"])
+            _update_workstream(
+                state_dir,
+                "01-dashboard",
+                {
+                    "status": "assigned",
+                    "state": "assigned",
+                    "assigned_agent": "worker-a",
+                    "updated_at": "2026-05-06T00:00:00Z",
+                },
+            )
+            server = _run_cli_json(["dashboard", str(repo), "--run-id", run["run_id"], "--detach", "--json"])
+            before = _evidence_snapshot(state_dir)
+            try:
+                status = _get_json(server["url"] + "/api/status")
+                plan = _get_json(server["url"] + "/api/plan")
+
+                self.assertEqual(status["workstream_counts"]["assigned"], 1)
+                self.assertEqual(status["workstream_progress"]["assigned"], 1)
+                self.assertEqual(status["workstream_progress"]["unassigned"], 2)
+                self.assertEqual(
+                    status["workstream_assignments"],
+                    [
+                        {
+                            "workstream": "01-dashboard",
+                            "agent_id": "worker-a",
+                            "role": "worker",
+                            "status": "assigned",
+                        }
+                    ],
+                )
+                dashboard_leaf = plan["tree"]["children"][0]["children"][0]
+                self.assertEqual(dashboard_leaf["id"], "01-dashboard")
+                self.assertEqual(dashboard_leaf["status"], "assigned")
+                self.assertEqual(dashboard_leaf["agent_id"], "worker-a")
+                self.assertEqual(plan["tree"]["status"], "running")
+                self.assertEqual(_evidence_snapshot(state_dir), before)
+            finally:
+                _stop_dashboard(repo, run["run_id"])
+
+    def test_status_and_plan_apis_share_terminal_event_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo)
+            state_dir = Path(run["state_dir"])
+            append_event(
+                state_dir / "events.jsonl",
+                "workstream.assigned",
+                workstream="01-dashboard",
+                payload={"agent_id": "worker-terminal", "role": "worker"},
+            )
+            _update_workstream(
+                state_dir,
+                "01-dashboard",
+                {
+                    "status": "cancelled",
+                    "state": "cancelled",
+                    "updated_at": "2026-05-06T00:00:00Z",
+                },
+            )
+            server = _run_cli_json(["dashboard", str(repo), "--run-id", run["run_id"], "--detach", "--json"])
+            before = _evidence_snapshot(state_dir)
+            try:
+                status = _get_json(server["url"] + "/api/status")
+                plan = _get_json(server["url"] + "/api/plan")
+
+                self.assertEqual(status["workstream_counts"]["cancelled"], 1)
+                self.assertEqual(
+                    status["workstream_assignments"],
+                    [
+                        {
+                            "workstream": "01-dashboard",
+                            "agent_id": "worker-terminal",
+                            "role": "worker",
+                            "status": "cancelled",
+                        }
+                    ],
+                )
+                dashboard_leaf = plan["tree"]["children"][0]["children"][0]
+                self.assertEqual(dashboard_leaf["id"], "01-dashboard")
+                self.assertEqual(dashboard_leaf["status"], "cancelled")
+                self.assertEqual(dashboard_leaf["agent_id"], "worker-terminal")
+                self.assertEqual(plan["tree"]["status"], "queued")
+                self.assertEqual(_evidence_snapshot(state_dir), before)
+            finally:
+                _stop_dashboard(repo, run["run_id"])
+
     def test_agent_detail_api_returns_logs_report_heartbeat_and_empty_states(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -307,6 +399,43 @@ class DashboardObserverTests(unittest.TestCase):
                 self.assertFalse(detail["empty_states"]["report"])
                 self.assertFalse(detail["empty_states"]["changed_files"])
                 self.assertFalse(detail["empty_states"]["heartbeat_samples"])
+                self.assertEqual(_evidence_snapshot(state_dir), before)
+            finally:
+                _stop_dashboard(repo, run["run_id"])
+
+    def test_agent_detail_api_exposes_stale_validator_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            run = _import_plan(repo)
+            state_dir = Path(run["state_dir"])
+            register_agent(
+                state_dir,
+                agent_id="validator-a",
+                role="validator",
+                provider="codex",
+                profile="codex-spawn-agent-validator",
+                status="running",
+                workstream="01-dashboard",
+                stdout_path=f".dispatch/runs/{state_dir.name}/logs/validator-a.stdout.log",
+                last_heartbeat_at="2000-01-01T00:00:00Z",
+            )
+            stdout_path = state_dir / "logs" / "validator-a.stdout.log"
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text("validator started\n", encoding="utf-8")
+            server = _run_cli_json(["dashboard", str(repo), "--run-id", run["run_id"], "--detach", "--json"])
+            before = _evidence_snapshot(state_dir)
+            try:
+                detail = _get_json(server["url"] + "/api/agent/validator-a")
+
+                self.assertEqual(detail["kind"], "agent_detail")
+                self.assertEqual(detail["status"], "ok")
+                self.assertEqual(detail["validation_evidence"]["expected_report_path"], str(state_dir / "validation" / "validator-a.json"))
+                self.assertFalse(detail["validation_evidence"]["terminal_report_present"])
+                self.assertEqual(
+                    [item["type"] for item in detail["validation_evidence"]["lifecycle_diagnostics"]],
+                    ["stale_validation_worker_without_report"],
+                )
+                self.assertTrue(detail["empty_states"]["report"])
                 self.assertEqual(_evidence_snapshot(state_dir), before)
             finally:
                 _stop_dashboard(repo, run["run_id"])
@@ -613,6 +742,13 @@ def _import_plan(repo: Path) -> dict:
     plan_path.parent.mkdir(parents=True, exist_ok=True)
     plan_path.write_text(json.dumps(_plan()) + "\n", encoding="utf-8")
     return import_dispatch_plan(repo, plan_path)
+
+
+def _update_workstream(state_dir: Path, workstream_id: str, fields: dict) -> None:
+    workstream_path = state_dir / "workstreams" / f"{workstream_id}.json"
+    workstream = json.loads(workstream_path.read_text(encoding="utf-8"))
+    workstream.update(fields)
+    workstream_path.write_text(json.dumps(workstream, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _plan() -> dict:

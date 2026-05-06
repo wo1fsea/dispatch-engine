@@ -35,11 +35,17 @@ imported plan -> provider CLI coordinator -> coordinator-spawned agents -> repor
 3. `de run <repo>` launches the provider CLI coordinator in the foreground, registers it in `.dispatch/`, captures logs, and records completion or failure.
 4. The provider CLI coordinator plans, dispatches, monitors, summarizes, and requests decisions, but remains coordinator-only.
 5. The coordinator may spawn workers, reviewers, or validators through provider-native mechanisms, but registered `.dispatch/` state remains the source of truth.
-6. Workers receive one workstream prompt at a time, scoped by the imported plan and current run state.
-7. Spawned agent prompt snapshots, reports, logs, status records, and heartbeats are stored as run-scoped runtime content under `.dispatch/runs/<run-id>/prompts/`, `reports/`, `reviews/`, `validation/`, `logs/`, `agents/`, and `heartbeats/`.
-8. Review and validation guidance lives in skill/reference prompts first; runtime report readers and violation checks are added only where durable evidence is needed.
-9. Validators execute or record the commands declared in the plan when validation evidence is required.
-10. Status and tail readers expose run progress from durable files and events.
+6. Each dispatch cycle starts with a ready-set pass: dependencies accepted,
+   blockers cleared, capability warnings handled, and no unsafe active
+   write-scope conflict.
+7. The coordinator batch-spawns every safe ready worker up to the declared
+   concurrency budget, then records the dispatch batch and active concurrency
+   in durable evidence.
+8. Workers receive one workstream prompt at a time, scoped by the imported plan and current run state.
+9. Spawned agent prompt snapshots, reports, logs, status records, and heartbeats are stored as run-scoped runtime content under `.dispatch/runs/<run-id>/prompts/`, `reports/`, `reviews/`, `validation/`, `logs/`, `agents/`, and `heartbeats/`.
+10. Review and validation guidance lives in skill/reference prompts first; runtime report readers and violation checks are added only where durable evidence is needed.
+11. Validators execute or record the commands declared in the plan when validation evidence is required.
+12. Status and tail readers expose run progress from durable files and events.
 
 ## Provider Coordinator Launch
 
@@ -79,11 +85,24 @@ satisfy the objective.
 ## Coordination Rules
 
 - A workstream is ready only when all `depends_on` entries are accepted or explicitly skipped by a recorded decision.
+- A ready set is the complete set of workstreams that are ready in the current
+  cycle after excluding active, accepted, failed, blocked, or already-assigned
+  workstreams.
 - A workstream is accepted only after coordinator/operator judgment combines
   worker, reviewer, validator, and decision/blocker evidence. Runtime status may
   display this state, but it must not automate the judgment.
 - Parallel workstreams may run together only when their declared write scopes do not overlap, or when the imported plan marks the overlap as coordinated.
 - Workstreams with unresolved decisions stay blocked until interactive Codex or the user records a decision.
+- The coordinator must batch-spawn safe ready workstreams up to the plan's
+  concurrency budget. If a ready workstream is not spawned, the coordinator
+  report must include a serial rationale such as provider capacity, write-scope
+  conflict, review gate, validation gate, user-requested serial review, or
+  missing capability decision.
+- Warning-only plan diagnostics may identify accidental under-parallelization,
+  such as serial workstreams without rationale or independent workstreams
+  lacking `parallel_group` or plan-level parallelism metadata. Diagnostics do
+  not rewrite the plan and do not reject conservative plans unless existing
+  overlap validation already rejects them.
 - The coordinator may retry, pause, or request review, but it must not broaden file scope or invent validation commands without a recorded decision.
 
 ## Adapter Neutrality

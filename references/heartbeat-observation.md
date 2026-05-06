@@ -30,6 +30,12 @@ Engine sessions, interactive Codex should launch or reuse it with
 `url` in the Codex in-app browser when available. The dashboard is read-only
 visibility for humans and Codex; it does not create wakeups, perform
 supervision, mutate `.dispatch/` state, or replace heartbeat checks.
+The dashboard URL is current only for the run id selected by the dashboard
+command. If a continuation run supersedes an older run, the heartbeat check
+still reads `status --json`, `events --since`, and `alerts --json` for the new
+run, while Codex launches or reports the new dashboard URL and labels the old
+URL stale/superseded. If a run reaches terminal state, any still-open dashboard
+is historical inspection rather than evidence that the run remains active.
 
 ## Required Lifecycle
 
@@ -46,9 +52,14 @@ After every successful interactive `de run <repo> --detach` launch:
 6. Before stopping a heartbeat for a terminal run, check `status --json`
    `lifecycle_diagnostics` and `alerts --json`. Orphaned running agents, stale
    detached supervisors, provider-native active agents without role-specific
-   reports, and stdout-only decision requests are material even when terminal
-   `next_actions` is empty.
-7. Track pending technical decisions across heartbeat wakeups. If the same
+   reports, stdout-only decision requests, and coordinator reports that list
+   `decisions_required` without durable decision evidence are material even
+   when terminal `next_actions` is empty.
+7. If the terminal run has a dashboard observer, describe it as terminal
+   historical inspection rather than live progress. For continuation runs,
+   launch or report the dashboard URL for the new run and call older observer
+   URLs stale/superseded unless the user asks to inspect the old run.
+8. Track pending technical decisions across heartbeat wakeups. If the same
    technical decision is still unresolved after four consecutive heartbeat
    checks, apply the autonomous technical-decision rule below.
 
@@ -132,6 +143,8 @@ Report only material changes:
   four-heartbeat autonomous technical-decision fallback
 - stdout appears to request a user decision but no pending decision record or
   `decision.requested` event exists
+- a coordinator report lists `decisions_required` but no pending decision
+  record or `decision.requested` event exists
 - a worker, reviewer, or validator is running without launch evidence
 - a provider-native spawned worker, reviewer, or validator remains active
   without a role-specific report after the staleness window
@@ -189,6 +202,9 @@ The source of truth is the append-only record in
 `.dispatch/runs/<run-id>/decisions.jsonl`. `status --json` may expose an
 `autonomous_decisions` count and compact records as a convenience for heartbeat
 and final-report summarization; do not treat the summary as the durable record.
+Do not apply the autonomous technical fallback to stdout-only questions or
+coordinator report `decisions_required` entries unless a matching pending
+decision record exists.
 
 The heartbeat should keep an in-thread list of autonomous choices made during
 the run. The final completion report must include every autonomous decision
@@ -206,7 +222,9 @@ Use the Codex-facing CLI surfaces in this order:
 
 1. `status --json`: primary summary, run state, agents, workstreams, pending
    decisions, protocol violations, autonomous decision summaries, and current
-   next actions.
+   next actions. Its `lifecycle_diagnostics` entries surface stdout-only and
+   report-only decision requests as material diagnostics when durable decision
+   evidence is missing.
 2. `events --since <event-id> --json`: delta reader for material changes since
    the last heartbeat.
 3. `alerts --json`: snapshot of decisions, failures, violations, and other

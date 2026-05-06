@@ -843,6 +843,16 @@
 
   function workstreams() {
     const run = currentRun();
+    const plan = state.data.plan || {};
+    if (Array.isArray(plan.workstreams) && plan.workstreams.length) {
+      return plan.workstreams.map((item) => ({
+        id: item.id,
+        title: item.title || item.name || item.id,
+        status: item.status || "planned",
+        agent: item.agent_id,
+        role: item.role,
+      })).sort((a, b) => safe(a.id).localeCompare(safe(b.id)));
+    }
     const rows = new Map();
     const assignments = Array.isArray(run.workstream_assignments) ? run.workstream_assignments : [];
     assignments.forEach((item) => {

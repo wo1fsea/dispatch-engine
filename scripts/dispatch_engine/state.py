@@ -33,6 +33,7 @@ TERMINAL_AGENT_STATUSES = frozenset({"completed", "completed_with_concerns", "fa
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 MATERIAL_STATUSES = frozenset({"completed", "failed", "blocked", "cancelled"})
 RUNNING_AGENT_STATUSES = frozenset({"registered", "running"})
+VALIDATION_EVIDENCE_ROLES = frozenset({"reviewer", "validator"})
 PROVIDER_NATIVE_NO_REPORT_STALE_AFTER_SECONDS = 60 * 60
 PROVIDER_NATIVE_LAUNCH_EVIDENCE_FIELDS = (
     "provider_native_agent_id",
@@ -75,15 +76,16 @@ def run_status(target: Path, run_id: str | None = None) -> dict:
         }
 
     data = json.loads(run_file.read_text(encoding="utf-8"))
-    workstreams = data.get("workstreams", [])
+    events = read_events(selected / "events.jsonl")
+    agents = list_agents(selected)
+    workstreams = _normalized_workstream_records(selected, data, events, agents=agents)
     counts = dict(Counter(item.get("status", "unknown") for item in workstreams))
     pending_decision_records = _pending_decision_records(selected, data)
     pending_decisions = len(pending_decision_records)
     unresolved_blockers = list_unresolved_blockers(selected)
     decision_blocker_validation = validate_decision_blocker_state(selected)
     autonomous_decisions = _autonomous_decision_summary(selected)
-    events = read_events(selected / "events.jsonl")
-    agent_summary = _agent_observability(selected, workstreams, events)
+    agent_summary = _agent_observability(selected, workstreams, events, agents)
     lifecycle_diagnostics = _lifecycle_diagnostics(
         selected,
         run=data,
@@ -250,14 +252,22 @@ def _missing_run(run_id: str) -> dict:
     }
 
 
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _agent_observability(
     run_state_dir: Path,
     workstreams: list[dict[str, Any]],
     events: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    agents = list_agents(run_state_dir)
     coordinator = _first_coordinator(agents)
-    assignments = _active_workstream_assignments(agents)
+    assignments = _workstream_assignments(agents, workstreams, events)
     protocol_violations = _protocol_violation_summary(run_state_dir, events)
     supervisors = read_supervisors(run_state_dir)
     return {
@@ -382,9 +392,12 @@ def _next_actions(
         for diagnostic in lifecycle_diagnostics
         if diagnostic.get("type") in {
             "missing_agent_launch_evidence",
+            "incomplete_validation_evidence",
             "orphaned_running_agent",
             "provider_native_spawn_without_report",
+            "report_only_decision_request",
             "stale_detached_supervisor",
+            "stale_validation_worker_without_report",
             "stdout_only_decision_request",
         }
     ]
@@ -448,8 +461,91 @@ def _first_coordinator(agents: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
-def _active_workstream_assignments(agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    assignments = []
+def _normalized_workstream_records(
+    run_state_dir: Path,
+    run: dict[str, Any],
+    events: list[dict[str, Any]] | None = None,
+    *,
+    agents: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    for item in run.get("workstreams", []):
+        if isinstance(item, dict) and item.get("id"):
+            records[str(item["id"])] = dict(item)
+
+    workstream_dir = run_state_dir / "workstreams"
+    if workstream_dir.is_dir():
+        for path in sorted(workstream_dir.glob("*.json")):
+            item = _read_json_object(path)
+            if item and item.get("id"):
+                records[str(item["id"])] = item
+
+    event_assignments = _event_workstream_assignments(
+        read_events(run_state_dir / "events.jsonl") if events is None else events
+    )
+    active_assignments = _active_agent_workstream_assignment_map(agents or [])
+    normalized: list[dict[str, Any]] = []
+    for workstream_id, item in records.items():
+        record = dict(item)
+        record["id"] = workstream_id
+        active_assignment = active_assignments.get(workstream_id)
+        record_assignment = _workstream_record_assignment(record)
+        event_assignment = event_assignments.get(workstream_id)
+        assignment = active_assignment or record_assignment or event_assignment
+        status = _normalized_workstream_status(record, assignment)
+        record["status"] = status
+        if assignment and (
+            record_assignment
+            or not _is_terminal_workstream_status(status)
+            or status == "cancelled"
+        ):
+            record.setdefault("assigned_agent", assignment.get("agent_id"))
+            record.setdefault("assigned_role", assignment.get("role"))
+        normalized.append(record)
+    return sorted(normalized, key=lambda item: item["id"])
+
+
+def _workstream_assignments(
+    agents: list[dict[str, Any]],
+    workstreams: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_workstream = _active_agent_workstream_assignment_map(agents)
+    by_workstream = {workstream: dict(assignment) for workstream, assignment in by_workstream.items()}
+
+    for item in workstreams:
+        workstream_id = str(item.get("id") or "")
+        if not workstream_id or workstream_id in by_workstream:
+            continue
+        status = str(item.get("status") or "unknown")
+        assignment = _workstream_record_assignment(item)
+        if assignment:
+            by_workstream[workstream_id] = _assignment_record(
+                workstream=workstream_id,
+                agent_id=assignment.get("agent_id"),
+                role=assignment.get("role"),
+                status=status,
+            )
+
+    for workstream_id, assignment in _event_workstream_assignments(events).items():
+        if workstream_id in by_workstream:
+            continue
+        workstream = next((item for item in workstreams if item.get("id") == workstream_id), {})
+        status = str(workstream.get("status") or assignment.get("status") or "assigned")
+        if _is_terminal_workstream_status(status) and status != "cancelled":
+            continue
+        by_workstream[workstream_id] = _assignment_record(
+            workstream=workstream_id,
+            agent_id=assignment.get("agent_id"),
+            role=assignment.get("role"),
+            status=status,
+        )
+
+    return sorted(by_workstream.values(), key=lambda item: (item["workstream"], item["agent_id"] or ""))
+
+
+def _active_agent_workstream_assignment_map(agents: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    assignments: dict[str, dict[str, Any]] = {}
     for agent in agents:
         workstream = agent.get("workstream")
         if not workstream:
@@ -457,15 +553,97 @@ def _active_workstream_assignments(agents: list[dict[str, Any]]) -> list[dict[st
         status = agent.get("status", "unknown")
         if status in TERMINAL_AGENT_STATUSES:
             continue
-        assignments.append(
-            {
-                "workstream": workstream,
-                "agent_id": agent.get("agent_id"),
-                "role": agent.get("role"),
-                "status": status,
-            }
+        assignments[str(workstream)] = _assignment_record(
+            workstream=str(workstream),
+            agent_id=agent.get("agent_id"),
+            role=agent.get("role"),
+            status=status,
         )
-    return sorted(assignments, key=lambda item: (item["workstream"], item["agent_id"] or ""))
+    return assignments
+
+
+def _workstream_record_assignment(item: dict[str, Any]) -> dict[str, Any] | None:
+    agent_id = _first_string(item, "assigned_agent", "assigned_agent_id", "agent_id", "worker_id")
+    if not agent_id:
+        return None
+    return {
+        "agent_id": agent_id,
+        "role": _first_string(item, "assigned_role", "role") or "worker",
+        "status": str(item.get("status") or item.get("state") or "assigned"),
+    }
+
+
+def _event_workstream_assignments(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    assignments: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.get("type") != "workstream.assigned":
+            continue
+        workstream = event.get("workstream")
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        agent_id = payload.get("agent_id")
+        if not isinstance(workstream, str) or not workstream or not isinstance(agent_id, str) or not agent_id:
+            continue
+        assignments[workstream] = {
+            "agent_id": agent_id,
+            "role": str(payload.get("role") or "worker"),
+            "status": str(payload.get("status") or "assigned"),
+        }
+    return assignments
+
+
+def _normalized_workstream_status(
+    item: dict[str, Any],
+    assignment: dict[str, Any] | None,
+) -> str:
+    raw_status = str(item.get("status") or item.get("state") or "").strip().lower()
+    raw_state = str(item.get("state") or "").strip().lower()
+    status = raw_status or raw_state or "planned"
+    aliases = {
+        "pending": "planned",
+        "queued": "planned",
+        "in_progress": "running",
+        "in-progress": "running",
+        "started": "running",
+        "done": "completed",
+        "complete": "completed",
+        "errored": "failed",
+        "error": "failed",
+    }
+    status = aliases.get(status, status)
+    if status == "planned" and assignment:
+        return str(assignment.get("status") or "assigned")
+    if status in {"assigned", "registered", "unknown"} and assignment:
+        assignment_status = str(assignment.get("status") or "assigned").strip().lower()
+        if assignment_status not in TERMINAL_AGENT_STATUSES:
+            return assignment_status
+    return status
+
+
+def _assignment_record(
+    *,
+    workstream: str,
+    agent_id: Any,
+    role: Any,
+    status: Any,
+) -> dict[str, Any]:
+    return {
+        "workstream": workstream,
+        "agent_id": agent_id,
+        "role": role or "worker",
+        "status": str(status or "assigned"),
+    }
+
+
+def _first_string(item: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _is_terminal_workstream_status(status: str) -> bool:
+    return status in {"completed", "completed_with_concerns", "failed", "blocked", "cancelled"}
 
 
 def _heartbeat_summary(agents: list[dict[str, Any]]) -> dict[str, int]:
@@ -490,6 +668,7 @@ def _lifecycle_diagnostics(
     diagnostics.extend(_stale_supervisor_diagnostics(supervisors))
     diagnostics.extend(_missing_launch_evidence_diagnostics(run_state_dir, agents))
     diagnostics.extend(_provider_native_no_report_diagnostics(run_state_dir, agents))
+    diagnostics.extend(_stale_validation_evidence_diagnostics(run_state_dir, run, agents))
     diagnostics.extend(_orphaned_running_agent_diagnostics(run, agents, supervisors))
     stdout_diagnostic = _stdout_only_decision_diagnostic(
         run_state_dir,
@@ -499,6 +678,14 @@ def _lifecycle_diagnostics(
     )
     if stdout_diagnostic is not None:
         diagnostics.append(stdout_diagnostic)
+    report_diagnostic = _report_only_decision_diagnostic(
+        run_state_dir,
+        agents=agents,
+        events=events,
+        pending_decisions=pending_decisions,
+    )
+    if report_diagnostic is not None:
+        diagnostics.append(report_diagnostic)
     return sorted(diagnostics, key=lambda item: (str(item.get("type")), str(item.get("agent_id", ""))))
 
 
@@ -650,6 +837,95 @@ def _provider_native_no_report_diagnostics(
     return diagnostics
 
 
+def _stale_validation_evidence_diagnostics(
+    run_state_dir: Path,
+    run: dict[str, Any],
+    agents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    diagnostics = []
+    for agent in agents:
+        if agent.get("role") not in VALIDATION_EVIDENCE_ROLES:
+            continue
+        report_path = _agent_report_path(run_state_dir, agent)
+        if report_path.exists():
+            continue
+        if _validation_evidence_cancelled(run, agent):
+            diagnostics.append(_incomplete_validation_evidence_diagnostic(run_state_dir, run, agent, report_path))
+            continue
+        if agent.get("status") not in RUNNING_AGENT_STATUSES:
+            continue
+        stale = _stale_agent_timestamp(agent)
+        if stale is None:
+            continue
+        diagnostics.append(_stale_validation_evidence_diagnostic(run_state_dir, agent, report_path, stale))
+    return diagnostics
+
+
+def _validation_evidence_cancelled(run: dict[str, Any], agent: dict[str, Any]) -> bool:
+    return run.get("status") == "cancelled" or agent.get("status") == "cancelled"
+
+
+def _stale_validation_evidence_diagnostic(
+    run_state_dir: Path,
+    agent: dict[str, Any],
+    report_path: Path,
+    stale: tuple[str, str, int],
+) -> dict[str, Any]:
+    field, value, age_seconds = stale
+    role = str(agent.get("role") or "validator")
+    return {
+        "type": "stale_validation_worker_without_report",
+        "severity": "material",
+        "agent_id": agent.get("agent_id"),
+        "role": role,
+        "status": agent.get("status"),
+        "workstream": agent.get("workstream"),
+        "report_path": _run_relative_existing_path(run_state_dir, report_path),
+        "stale_since_field": field,
+        "stale_since": value,
+        "stale_after_seconds": PROVIDER_NATIVE_NO_REPORT_STALE_AFTER_SECONDS,
+        "age_seconds": age_seconds,
+        "suggested_next_action": "inspect_wait_cancel_or_rerun_validation",
+        "summary": (
+            f"{role} {agent.get('agent_id')} has no fresh heartbeat and no role-specific "
+            "terminal report, so validation evidence is incomplete."
+        ),
+    }
+
+
+def _incomplete_validation_evidence_diagnostic(
+    run_state_dir: Path,
+    run: dict[str, Any],
+    agent: dict[str, Any],
+    report_path: Path,
+) -> dict[str, Any]:
+    role = str(agent.get("role") or "validator")
+    terminal_reason = (
+        agent.get("cancellation_reason")
+        or run.get("cancellation_reason")
+        or agent.get("failure_reason")
+        or run.get("failure_reason")
+    )
+    diagnostic = {
+        "type": "incomplete_validation_evidence",
+        "severity": "material",
+        "agent_id": agent.get("agent_id"),
+        "role": role,
+        "status": agent.get("status"),
+        "workstream": agent.get("workstream"),
+        "report_path": _run_relative_existing_path(run_state_dir, report_path),
+        "run_status": run.get("status"),
+        "suggested_next_action": "rerun_validation_or_record_blocked_validator_report",
+        "summary": (
+            f"{role} {agent.get('agent_id')} reached {agent.get('status')} "
+            "without a role-specific terminal report."
+        ),
+    }
+    if terminal_reason:
+        diagnostic["terminal_reason"] = terminal_reason
+    return diagnostic
+
+
 def _stale_agent_timestamp(agent: dict[str, Any]) -> tuple[str, str, int] | None:
     for field in ("last_heartbeat_at", "updated_at", "started_at", "created_at"):
         value = agent.get(field)
@@ -748,7 +1024,7 @@ def _stdout_only_decision_diagnostic(
     events: list[dict[str, Any]],
     pending_decisions: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    if pending_decisions or any(event.get("type") == "decision.requested" for event in events):
+    if _has_durable_decision_evidence(events, pending_decisions):
         return None
 
     coordinator = _first_coordinator(agents)
@@ -767,6 +1043,107 @@ def _stdout_only_decision_diagnostic(
         "matched_text": matched_text,
         "summary": "Coordinator stdout appears to request a user decision, but no pending decision record or decision.requested event exists.",
     }
+
+
+def _report_only_decision_diagnostic(
+    run_state_dir: Path,
+    *,
+    agents: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    pending_decisions: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if _has_durable_decision_evidence(events, pending_decisions):
+        return None
+
+    coordinator = _first_coordinator(agents)
+    report_path = _coordinator_report_path(run_state_dir, coordinator)
+    if report_path is None or not report_path.exists():
+        return None
+
+    report = _read_json_object(report_path)
+    if not report:
+        return None
+
+    decisions_required = _report_decisions_required(report)
+    if not decisions_required:
+        return None
+
+    decision_ids = [
+        item["decision_id"]
+        for item in decisions_required
+        if item.get("decision_id")
+    ]
+    questions = [
+        item["question"]
+        for item in decisions_required
+        if item.get("question")
+    ]
+    workstreams = sorted(
+        {
+            item["workstream"]
+            for item in decisions_required
+            if item.get("workstream")
+        }
+    )
+    return {
+        "type": "report_only_decision_request",
+        "severity": "material",
+        "agent_id": coordinator.get("agent_id") if coordinator else "coordinator-001",
+        "report_path": _run_relative_existing_path(run_state_dir, report_path),
+        "decisions_required_count": len(decisions_required),
+        "decision_ids": decision_ids,
+        "questions": questions,
+        "workstreams": workstreams,
+        "summary": "Coordinator report lists decisions_required, but no pending decision record or decision.requested event exists.",
+    }
+
+
+def _has_durable_decision_evidence(
+    events: list[dict[str, Any]],
+    pending_decisions: list[dict[str, Any]],
+) -> bool:
+    return bool(pending_decisions or any(event.get("type") == "decision.requested" for event in events))
+
+
+def _coordinator_report_path(run_state_dir: Path, coordinator: dict[str, Any] | None) -> Path | None:
+    if coordinator:
+        return _agent_report_path(run_state_dir, coordinator)
+    return run_state_dir / "reports" / "coordinator-001.json"
+
+
+def _report_decisions_required(report: dict[str, Any]) -> list[dict[str, str]]:
+    raw_decisions = report.get("decisions_required")
+    if isinstance(raw_decisions, dict):
+        raw_decisions = [raw_decisions]
+    if not isinstance(raw_decisions, list):
+        return []
+
+    decisions = []
+    for item in raw_decisions:
+        record = _report_decision_required_item(item)
+        if record:
+            decisions.append(record)
+    return decisions
+
+
+def _report_decision_required_item(item: Any) -> dict[str, str] | None:
+    if isinstance(item, str):
+        question = item.strip()
+        return {"question": question} if question else None
+    if not isinstance(item, dict):
+        return None
+
+    record = {}
+    decision_id = _first_string(item, "decision_id", "id")
+    question = _first_string(item, "question", "prompt", "summary")
+    workstream = _first_string(item, "workstream", "workstream_id", "blocking_workstream")
+    if decision_id:
+        record["decision_id"] = decision_id
+    if question:
+        record["question"] = question
+    if workstream:
+        record["workstream"] = workstream
+    return record or None
 
 
 def _coordinator_stdout_path(run_state_dir: Path, coordinator: dict[str, Any] | None) -> Path | None:
@@ -936,16 +1313,21 @@ def _workstream_progress(
     assignments: list[dict[str, Any]],
 ) -> dict[str, int]:
     assigned_workstreams = {item["workstream"] for item in assignments}
+    statuses = Counter(str(item.get("status") or "unknown") for item in workstreams)
     unassigned = sum(
         1
         for item in workstreams
         if item.get("id") not in assigned_workstreams
-        and item.get("status", "unknown") not in {"completed", "failed", "blocked"}
+        and item.get("status", "unknown") in {"planned", "queued", "unknown"}
     )
     return {
-        "completed": sum(1 for item in workstreams if item.get("status") == "completed"),
-        "failed": sum(1 for item in workstreams if item.get("status") == "failed"),
-        "blocked": sum(1 for item in workstreams if item.get("status") == "blocked"),
+        "planned": statuses.get("planned", 0),
+        "assigned": statuses.get("assigned", 0),
+        "running": statuses.get("running", 0) + statuses.get("registered", 0),
+        "completed": statuses.get("completed", 0),
+        "failed": statuses.get("failed", 0),
+        "blocked": statuses.get("blocked", 0),
+        "cancelled": statuses.get("cancelled", 0),
         "unassigned": unassigned,
     }
 
@@ -1065,10 +1447,17 @@ def _material_alerts(
             "stdout_path",
             "matched_text",
             "report_path",
+            "decisions_required_count",
+            "decision_ids",
+            "questions",
+            "workstreams",
             "evidence_fields",
             "stale_since_field",
             "stale_since",
             "stale_after_seconds",
+            "run_status",
+            "terminal_reason",
+            "suggested_next_action",
         ):
             if diagnostic.get(field) is not None:
                 alert[field] = diagnostic[field]

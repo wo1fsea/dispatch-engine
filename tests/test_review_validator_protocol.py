@@ -333,6 +333,15 @@ class ReviewValidatorProtocolTests(unittest.TestCase):
             self.assertEqual(write_agent_prompt_snapshot(state_dir, reviewer, reviewer_prompt).read_text(), reviewer_prompt)
             self.assertEqual(write_agent_prompt_snapshot(state_dir, validator, validator_prompt).read_text(), validator_prompt)
 
+    def test_reviewer_validator_shared_protocol_requires_terminal_reports(self) -> None:
+        prompt_path = Path(__file__).resolve().parents[1] / "references" / "prompts" / "reviewer-validator-protocol.md"
+
+        text = prompt_path.read_text(encoding="utf-8")
+
+        self.assertIn("terminal report", text)
+        self.assertIn("stale_validation_worker_without_report", text)
+        self.assertIn("incomplete_validation_evidence", text)
+
 
 def _register_reviewer(state_dir: Path) -> dict:
     return register_agent(

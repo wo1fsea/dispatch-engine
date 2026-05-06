@@ -37,10 +37,40 @@ Objective: {objective}
 - Record coordinator and implementation-agent lifecycle events in `.dispatch/` state.
 - Keep heartbeats current while work is active.
 - Respect workstream dependencies and declared file scopes.
+- If operator approval or another user decision is needed, write a durable
+  pending decision before exiting, waiting, or reporting success. The source of
+  truth is `.dispatch/runs/{run_id}/decisions.jsonl` plus a
+  `decision.requested` event. Stdout text and coordinator reports may summarize
+  the request, but they are not decision records.
+- A required decision record must include a stable decision id, the question,
+  the blocking workstream id when applicable, and the reason or evidence for
+  the blocker. Include options when known, and mark whether a conservative
+  four-heartbeat autonomous technical fallback is eligible only for decisions
+  that are technical, reversible, and inside the approved objective.
+- Do not put an approval blocker only in stdout or only in the coordinator
+  report. If a coordinator report lists `decisions_required`, matching durable
+  pending decision records must already exist.
+- Before every dispatch cycle, compute the ready set from imported
+  workstreams, current agent state, accepted dependencies, unresolved blockers,
+  handled capability warnings, active write scopes, and unsafe overlap rules.
 - Inspect imported workstreams for `validation_warnings` before dispatch. If a
   warning shows validation commands that appear to need denied capabilities,
   narrow the command, request a capability decision, or mark the workstream
   blocked instead of assuming the worker can run it.
+- Inspect imported plan `diagnostics` or `plan_diagnostics` before dispatch.
+  These diagnostics are warning-only, but a warning about accidental
+  under-parallelization requires coordinator judgment: improve the dispatch
+  batch when safe, or record why serialization is intentional.
+- Use the plan's `parallelism.concurrency_budget` or equivalent declared
+  concurrency budget as the upper bound for a dispatch batch. If the budget is
+  absent, choose a conservative provider-safe budget, record that choice, and
+  do not use the absence of metadata as a silent reason to serialize all work.
+- Batch-spawn every safe ready workstream up to the active concurrency budget.
+  A ready workstream may be held back only for a concrete provider limit,
+  write-scope conflict, dependency, blocker, review gate, validation gate, or
+  user-approved serial gate.
+- Record dispatch batches, active concurrency, and a serial rationale for
+  every ready workstream that is not spawned in the current batch.
 - Request a decision before expanding write scope or continuing blocked work.
 - Write coordinator reports to `{report_path}`.
 - Coordinator owns spawn decisions; Dispatch Engine owns the durable observability contract.
@@ -76,6 +106,15 @@ Objective: {objective}
   and alerts surface `provider_native_spawn_without_report`; inspect the
   provider session, wait only if it is still making progress, or mark the agent
   blocked/failed, repair with durable evidence, or cancel after user approval.
+- If a reviewer or validator has launch/log evidence but no fresh heartbeat and
+  no role-specific terminal report, status and alerts surface
+  `stale_validation_worker_without_report`. Treat this as incomplete validation
+  evidence: inspect progress, wait only with fresh evidence, cancel after user
+  approval, or rerun validation and record a terminal report.
+- If cancellation terminalizes a reviewer or validator before a terminal report
+  is written, status and alerts preserve `incomplete_validation_evidence`; do
+  not describe the workstream as accepted until fresh validation is rerun or a
+  blocked/failed/skipped terminal validator report is recorded.
 - If a worker, reviewer, or validator report is missing or malformed, use a
   recorded repair helper or repair worker with its own prompt/report evidence.
   Do not hand-edit the report into shape without a durable repair record.

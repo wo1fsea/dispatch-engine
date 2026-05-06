@@ -113,6 +113,110 @@ class StatusTailTests(unittest.TestCase):
                 "missing_reviewer_report",
             )
 
+    def test_status_uses_durable_assigned_workstream_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="durable assignment objective")
+            state_dir = Path(plan["state_dir"])
+            _update_workstream(
+                state_dir,
+                "01-status-tail",
+                {
+                    "status": "assigned",
+                    "state": "assigned",
+                    "assigned_agent": "worker-001",
+                    "updated_at": "2026-05-06T00:00:00Z",
+                },
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertEqual(status["workstream_counts"], {"assigned": 1})
+            self.assertEqual(status["workstream_progress"]["unassigned"], 0)
+            self.assertEqual(status["workstream_progress"]["assigned"], 1)
+            self.assertEqual(
+                status["workstream_assignments"],
+                [
+                    {
+                        "workstream": "01-status-tail",
+                        "agent_id": "worker-001",
+                        "role": "worker",
+                        "status": "assigned",
+                    }
+                ],
+            )
+
+    def test_status_preserves_terminal_workstream_file_assignment_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="terminal assignment objective")
+            state_dir = Path(plan["state_dir"])
+            _update_workstream(
+                state_dir,
+                "01-status-tail",
+                {
+                    "status": "completed",
+                    "state": "completed",
+                    "assigned_agent": "worker-001",
+                    "updated_at": "2026-05-06T00:00:00Z",
+                },
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertEqual(status["workstream_counts"], {"completed": 1})
+            self.assertEqual(status["workstream_progress"]["completed"], 1)
+            self.assertEqual(status["workstream_progress"]["unassigned"], 0)
+            self.assertEqual(
+                status["workstream_assignments"],
+                [
+                    {
+                        "workstream": "01-status-tail",
+                        "agent_id": "worker-001",
+                        "role": "worker",
+                        "status": "completed",
+                    }
+                ],
+            )
+
+    def test_status_preserves_terminal_assignment_event_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="terminal event assignment objective")
+            state_dir = Path(plan["state_dir"])
+            append_event(
+                state_dir / "events.jsonl",
+                "workstream.assigned",
+                workstream="01-status-tail",
+                payload={"agent_id": "worker-002", "role": "worker"},
+            )
+            _update_workstream(
+                state_dir,
+                "01-status-tail",
+                {
+                    "status": "cancelled",
+                    "state": "cancelled",
+                    "updated_at": "2026-05-06T00:00:00Z",
+                },
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+
+            self.assertEqual(status["workstream_counts"], {"cancelled": 1})
+            self.assertEqual(status["workstream_progress"]["cancelled"], 1)
+            self.assertEqual(status["workstream_progress"]["unassigned"], 0)
+            self.assertEqual(
+                status["workstream_assignments"],
+                [
+                    {
+                        "workstream": "01-status-tail",
+                        "agent_id": "worker-002",
+                        "role": "worker",
+                        "status": "cancelled",
+                    }
+                ],
+            )
+
     def test_status_command_prints_concise_agent_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -444,6 +548,93 @@ class StatusTailTests(unittest.TestCase):
 
             self.assertEqual(status["lifecycle_diagnostics"], [])
 
+    def test_stale_validator_without_terminal_report_surfaces_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="stale validator objective")
+            state_dir = Path(plan["state_dir"])
+            register_agent(
+                state_dir,
+                agent_id="validator-001",
+                role="validator",
+                provider="codex",
+                profile="codex-exec",
+                status="running",
+                workstream="01-status-tail",
+                stdout_path=f".dispatch/runs/{state_dir.name}/logs/validator-001.stdout.log",
+                last_heartbeat_at="2000-01-01T00:00:00Z",
+            )
+            stdout_path = state_dir / "logs" / "validator-001.stdout.log"
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text("validator still running\n", encoding="utf-8")
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            self.assertEqual(
+                [item["type"] for item in status["lifecycle_diagnostics"]],
+                ["stale_validation_worker_without_report"],
+            )
+            diagnostic = status["lifecycle_diagnostics"][0]
+            self.assertEqual(diagnostic["agent_id"], "validator-001")
+            self.assertEqual(diagnostic["role"], "validator")
+            self.assertEqual(diagnostic["report_path"], f".dispatch/runs/{state_dir.name}/validation/validator-001.json")
+            self.assertEqual(diagnostic["stale_since_field"], "last_heartbeat_at")
+            self.assertEqual(diagnostic["suggested_next_action"], "inspect_wait_cancel_or_rerun_validation")
+            self.assertIn(
+                "stale_validation_worker_without_report",
+                [alert["type"] for alert in alerts["alerts"]],
+            )
+            self.assertIn(
+                "stale_validation_worker_without_report",
+                status["next_actions"][0]["diagnostic_types"],
+            )
+
+    def test_cancelled_run_preserves_incomplete_validation_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="cancelled validation objective")
+            state_dir = Path(plan["state_dir"])
+            _set_run_status(
+                state_dir,
+                "cancelled",
+                {
+                    "cancelled_at": "2026-05-03T00:00:00Z",
+                    "cancellation_reason": "Operator cancelled stalled validation.",
+                },
+            )
+            register_agent(
+                state_dir,
+                agent_id="validator-001",
+                role="validator",
+                provider="codex",
+                profile="codex-exec",
+                status="cancelled",
+                workstream="01-status-tail",
+                stdout_path=f".dispatch/runs/{state_dir.name}/logs/validator-001.stdout.log",
+                last_heartbeat_at="2000-01-01T00:00:00Z",
+            )
+            _update_agent(
+                state_dir,
+                "validator-001",
+                {"cancellation_reason": "Operator cancelled stalled validation."},
+            )
+            stdout_path = state_dir / "logs" / "validator-001.stdout.log"
+            stdout_path.parent.mkdir(parents=True, exist_ok=True)
+            stdout_path.write_text("validation did not finish\n", encoding="utf-8")
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            diagnostics = status["lifecycle_diagnostics"]
+            self.assertEqual([item["type"] for item in diagnostics], ["incomplete_validation_evidence"])
+            diagnostic = diagnostics[0]
+            self.assertEqual(diagnostic["agent_id"], "validator-001")
+            self.assertEqual(diagnostic["status"], "cancelled")
+            self.assertEqual(diagnostic["report_path"], f".dispatch/runs/{state_dir.name}/validation/validator-001.json")
+            self.assertEqual(diagnostic["terminal_reason"], "Operator cancelled stalled validation.")
+            self.assertIn("incomplete_validation_evidence", [alert["type"] for alert in alerts["alerts"]])
+
     def test_status_and_alerts_surface_stdout_only_decision_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -474,6 +665,65 @@ class StatusTailTests(unittest.TestCase):
             self.assertIn(
                 "stdout_only_decision_request",
                 [alert["type"] for alert in alerts["alerts"]],
+            )
+
+    def test_status_and_alerts_surface_report_only_decision_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            plan = _import_plan(repo, objective="report decision objective")
+            state_dir = Path(plan["state_dir"])
+            register_agent(
+                state_dir,
+                agent_id="coordinator-001",
+                role="coordinator",
+                provider="codex",
+                profile="codex-exec",
+                status="completed",
+            )
+            report_path = state_dir / "reports" / "coordinator-001.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "agent_id": "coordinator-001",
+                        "role": "coordinator",
+                        "status": "completed",
+                        "summary": "Approval is required before continuing.",
+                        "decisions_required": [
+                            {
+                                "decision_id": "decision-approve-expanded-scope",
+                                "question": "Approve expanding worker scope?",
+                                "workstream": "01-status-tail",
+                            }
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            status = run_status(repo, run_id=plan["run_id"])
+            alerts = run_alerts(repo, run_id=plan["run_id"])
+
+            diagnostics = status["lifecycle_diagnostics"]
+            self.assertEqual([item["type"] for item in diagnostics], ["report_only_decision_request"])
+            diagnostic = diagnostics[0]
+            self.assertEqual(diagnostic["agent_id"], "coordinator-001")
+            self.assertEqual(diagnostic["decision_ids"], ["decision-approve-expanded-scope"])
+            self.assertEqual(diagnostic["questions"], ["Approve expanding worker scope?"])
+            self.assertEqual(diagnostic["workstreams"], ["01-status-tail"])
+            self.assertEqual(
+                diagnostic["report_path"],
+                f".dispatch/runs/{state_dir.name}/reports/coordinator-001.json",
+            )
+            self.assertIn(
+                "report_only_decision_request",
+                [alert["type"] for alert in alerts["alerts"]],
+            )
+            self.assertIn(
+                "report_only_decision_request",
+                status["next_actions"][0]["diagnostic_types"],
             )
 
     def test_alerts_normalize_legacy_capability_protocol_violation_events(self) -> None:
@@ -654,11 +904,13 @@ def _plan(objective: str) -> dict:
     }
 
 
-def _set_run_status(state_dir: Path, status: str) -> None:
+def _set_run_status(state_dir: Path, status: str, extra: dict | None = None) -> None:
     run_path = state_dir / "run.json"
     run = json.loads(run_path.read_text(encoding="utf-8"))
     run["status"] = status
     run["updated_at"] = "2026-05-03T00:00:00Z"
+    if extra:
+        run.update(extra)
     run_path.write_text(json.dumps(run, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -667,6 +919,13 @@ def _update_agent(state_dir: Path, agent_id: str, fields: dict) -> None:
     agent = json.loads(agent_path.read_text(encoding="utf-8"))
     agent.update(fields)
     agent_path.write_text(json.dumps(agent, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _update_workstream(state_dir: Path, workstream_id: str, fields: dict) -> None:
+    workstream_path = state_dir / "workstreams" / f"{workstream_id}.json"
+    workstream = json.loads(workstream_path.read_text(encoding="utf-8"))
+    workstream.update(fields)
+    workstream_path.write_text(json.dumps(workstream, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _write_report(state_dir: Path, agent_id: str) -> None:

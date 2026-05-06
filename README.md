@@ -116,6 +116,17 @@ which uses actor `interactive-codex-autonomous`, appends the source-of-truth
 entry to `.dispatch/runs/<run-id>/decisions.jsonl`, and makes a compact
 `status --json` `autonomous_decisions` summary available for final reporting.
 
+Interactive Codex should also start or reuse the read-only dashboard observer
+for the selected run and report the returned URL. The dashboard is not a
+wakeup mechanism: terminal state, cancellation, and superseded-run detection
+still come from `status --json`, `events --since`, and `alerts --json`. When a
+run reaches `completed`, `failed`, or `cancelled`, Codex should stop the host
+heartbeat and describe any still-open dashboard as terminal historical
+inspection, not live progress. When a continuation run supersedes an older run,
+Codex should open or report the new run's dashboard URL and call the old URL or
+old `dashboard --status --run-id <old-run-id> --json` result stale/superseded
+unless the user intentionally wants to inspect history.
+
 When the user asks to stop a Dispatch Engine run, interactive Codex should call
 `de cancel <repo> --run-id <run-id> --reason <text> --json`. The command
 resolves the latest run when `--run-id` is omitted, records a durable terminal
@@ -137,11 +148,9 @@ $EDITOR "$TARGET/.dispatch/plans/plan-001.json"
 python3 "$DE_SKILL/scripts/de.py" init "$TARGET" --plan "$TARGET/.dispatch/plans/plan-001.json"
 python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --dry-run
 python3 "$DE_SKILL/scripts/de.py" run "$TARGET" --detach
-python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
-python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
-python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
-python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 python3 "$DE_SKILL/scripts/de.py" dashboard "$TARGET" --detach --json
+python3 "$DE_SKILL/scripts/de.py" status "$TARGET"
+python3 "$DE_SKILL/scripts/de.py" tail "$TARGET"
 ```
 
 Interactive Codex remains the external operator: it reads target repo
@@ -150,8 +159,10 @@ decisions, reviews evidence, and polls Codex-facing state surfaces such as
 `status --json`, `events --since`, `alerts --json`, and `tail`. When a visual
 surface is useful, Codex can also launch or reuse the local read-only
 dashboard observer with `de dashboard` and open the returned URL in the Codex
-browser. After explicit
-user approval, Codex can use `resolve-decision` to record a selected option.
+browser. The current dashboard is the one for the selected run id; continuation
+runs should get a fresh reported URL, while old dashboard tabs are terminal,
+stale, or superseded historical views. After explicit user approval, Codex can
+use `resolve-decision` to record a selected option.
 After an allowed four-heartbeat autonomous technical fallback, Codex records
 the selected option with the Codex-facing autonomous flags:
 
@@ -249,7 +260,9 @@ necessary.
 - Respect target repository conventions instead of prescribing a universal spec format.
 - Keep orchestration state explicit, resumable, and reviewable.
 - Use interactive Codex plus the skill for repository discovery, planning, review, validation judgment, and user interaction.
+- Analyze safe parallelism before dispatch: identify ready batches, write-scope conflicts, concurrency budget, and serial rationale for ready work that is intentionally held back.
 - Use the runtime for explicit plan import, foreground or detached coordinator launch, user-requested cancellation, `.dispatch/` state, event logs, status/tail, and future mechanical helpers.
+- Surface lifecycle diagnostics through status and alerts when coordinator decisions, worker/reviewer/validator reports, or terminal validation evidence are missing.
 - Treat host heartbeat/wakeup automation as the required observation trigger for proactive chat updates after interactive detached launches; Dispatch Engine writes queryable state but does not wake or message the chat directly.
 - Keep autonomous technical decision eligibility in outer interactive Codex and heartbeat guidance. Runtime only validates supplied metadata, appends records to `decisions.jsonl`, emits normal decision events, and surfaces `status --json` summaries.
 - Use `.dispatch/runs/<run-id>/agents/`, `prompts/`, `supervisors/`, `reports/`, `reviews/`, `validation/`, `logs/`, and `heartbeats/` for observable coordinator, worker, reviewer, and validator state.

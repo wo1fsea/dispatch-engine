@@ -123,6 +123,20 @@ The dashboard is an observer UI only; it does not mutate repository or
 `.dispatch/` state, and it does not replace heartbeat supervision or explicit
 `status --json`, `events --since`, and `alerts --json` checks.
 
+Dashboard observer lifecycle follows the run selected by `de dashboard`,
+normally the latest run unless `--run-id` is supplied. After `run --detach`,
+report the dashboard URL for that current run together with the host heartbeat
+status. When `status --json` reports `completed`, `failed`, or `cancelled`,
+report that terminal state once, stop the heartbeat, and treat any still-open
+dashboard as historical read-only inspection rather than live progress. When a
+continuation run supersedes an older run, launch or reuse the dashboard for the
+new run and report the new URL; identify the older dashboard tab or
+`dashboard --status --run-id <old-run-id> --json` result as stale or superseded
+unless the user explicitly wants historical inspection. Do not stop a recorded
+dashboard observer automatically unless the operator requested cleanup or the
+metadata under `.dispatch/runs/<run-id>/dashboard/server.json` proves it belongs
+to the run being retired.
+
 Live runs write a prompt snapshot and process logs under the target repository's
 run state:
 
@@ -157,17 +171,17 @@ expectations, escalation rules, and report path.
 ## Operating Flow
 
 1. Read the target repository's local instructions before dispatching work.
-2. Use interactive Codex judgment to summarize the repository rules, planning basis, validation strategy, workstreams, dependencies, write scopes, and pending decisions.
+2. Use interactive Codex judgment to summarize the repository rules, planning basis, validation strategy, workstreams, dependencies, write scopes, pending decisions, safe parallel batches, concurrency budget, and serial rationale for ready work that is intentionally held back.
 3. Write any Dispatch Engine-generated plan file under `.dispatch/plans/` in the target repository.
 4. Import the explicit plan into runtime state with `python scripts/de.py init <repo> --plan <repo>/.dispatch/plans/<plan-id>.json`.
 5. Preview the coordinator launch with `python scripts/de.py run <repo> --dry-run`; omit `--provider` for the default Codex coordinator, or pass `--provider codex` or `--provider claude` explicitly.
 6. Ask the user before worker execution when the plan contains pending decisions, high-risk surfaces, or parallel workstreams.
 7. Start the coordinator with `python scripts/de.py run <repo> --detach` when interactive Codex should remain responsive; use foreground `de run` only for debugging or CI-style smoke checks.
 8. Immediately create a host-layer heartbeat monitor for the current thread after every successful interactive detached launch. This is required, not optional, when the host supports thread wakeups. The default interval is 15 minutes.
-9. For active sessions, launch or reuse the read-only dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available.
+9. For active sessions, launch or reuse the read-only dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available, and treat that URL as current only for the selected run id.
 10. Configure the heartbeat to read `status --json`, `events --since`, and `alerts --json`, report only material changes, request user input for decisions or blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed, and stop itself when the run reaches `completed`, `failed`, or `cancelled`.
 11. If the host cannot create a heartbeat, state that the detached run is not proactively supervised in this chat and ask before continuing.
-12. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, and deeper inspection. Treat the dashboard as supplementary read-only visibility, not as the source of truth for supervision.
+12. Monitor status through Codex-facing JSON/file surfaces, starting with `status --json`; use `events --since`, `alerts --json`, and `.dispatch/runs/` files for deltas, material alerts, lifecycle diagnostics, terminal state, and superseded-run checks. Treat the dashboard as supplementary read-only visibility, not as the source of truth for supervision.
 13. If the user asks to stop a run, call
     `python scripts/de.py cancel <repo> --run-id <run-id> --reason "<user-facing reason>" --json`,
     then read `status --json`, `events --since`, and `alerts --json` before

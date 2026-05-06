@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .agents import list_agents, read_agent
 from .events import utc_timestamp
 from .runs import resolve_run_dir, runs_dir
-from .state import run_alerts, run_events, run_status, tail_events
+from .state import _normalized_workstream_records, run_alerts, run_events, run_status, tail_events
 
 DASHBOARD_SCHEMA_VERSION = 1
 DEFAULT_HOST = "127.0.0.1"
@@ -473,7 +473,10 @@ def _plan_payload(repo_root: Path, run_id: str) -> dict[str, Any]:
     plan = run.get("plan") if isinstance(run.get("plan"), dict) else {}
     status_payload = run_status(repo_root, run_id=run_id)
     assignments = status_payload.get("workstream_assignments")
-    workstreams = _workstream_records(selected, run, assignments if isinstance(assignments, list) else [])
+    workstreams = _workstream_records(
+        _normalized_workstream_records(selected, run),
+        assignments if isinstance(assignments, list) else [],
+    )
     root_label = str(plan.get("source_path") or plan.get("plan_id") or selected.name)
     root_name = Path(root_label).name if root_label else str(plan.get("plan_id") or selected.name)
     tree = {
@@ -504,21 +507,9 @@ def _plan_payload(repo_root: Path, run_id: str) -> dict[str, Any]:
 
 
 def _workstream_records(
-    run_state_dir: Path,
-    run: dict[str, Any],
+    records: list[dict[str, Any]],
     assignments: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    records: dict[str, dict[str, Any]] = {}
-    for item in run.get("workstreams", []):
-        if isinstance(item, dict) and item.get("id"):
-            records[str(item["id"])] = dict(item)
-    workstream_dir = run_state_dir / "workstreams"
-    if workstream_dir.is_dir():
-        for path in sorted(workstream_dir.glob("*.json")):
-            item = _read_json_object(path)
-            if item and item.get("id"):
-                records[str(item["id"])] = item
-
     by_workstream: dict[str, dict[str, Any]] = {}
     for agent in assignments:
         workstream = agent.get("workstream")
@@ -526,7 +517,7 @@ def _workstream_records(
             by_workstream[workstream] = agent
 
     normalized = []
-    for item in records.values():
+    for item in records:
         workstream_id = str(item.get("id"))
         agent = by_workstream.get(workstream_id, {})
         depends_on = _string_list_value(item.get("depends_on"))
@@ -549,8 +540,8 @@ def _workstream_records(
                 "file_count": len(files),
                 "validation": validation,
                 "validation_count": len(validation),
-                "agent_id": agent.get("agent_id"),
-                "role": agent.get("role"),
+                "agent_id": agent.get("agent_id") or item.get("assigned_agent"),
+                "role": agent.get("role") or item.get("assigned_role"),
                 "blocked_reason": item.get("blocked_reason") or item.get("blocker") or item.get("reason"),
                 "created_at": item.get("created_at"),
                 "updated_at": item.get("updated_at"),
@@ -621,6 +612,14 @@ def _agent_detail(repo_root: Path, run_id: str, agent_id: str) -> dict[str, Any]
     report = report_payload.get("report") if report_payload.get("status") == "ok" else None
     changed_files = _changed_files_from_report(report)
     heartbeat_samples = _agent_heartbeat_samples(selected, agent_id)
+    validation_evidence = _validation_evidence_detail(
+        repo_root,
+        run_id,
+        selected,
+        agent,
+        report_path=report_payload.get("report_path"),
+        terminal_report_present=report is not None,
+    )
     profile = agent.get("capability_profile") if isinstance(agent.get("capability_profile"), dict) else {}
     capabilities = profile.get("capabilities") if isinstance(profile, dict) else {}
     capability_rows = [
@@ -641,6 +640,7 @@ def _agent_detail(repo_root: Path, run_id: str, agent_id: str) -> dict[str, Any]
         "report_path": report_payload.get("report_path"),
         "changed_files": changed_files,
         "heartbeat_samples": heartbeat_samples,
+        "validation_evidence": validation_evidence,
         "capability_grants": capability_rows,
         "capabilities_exercised": _list_from_report(report, "capabilities_exercised"),
         "capability_escalations": _list_from_report(report, "capability_escalations"),
@@ -648,9 +648,52 @@ def _agent_detail(repo_root: Path, run_id: str, agent_id: str) -> dict[str, Any]
             "report": report is None,
             "changed_files": not changed_files,
             "heartbeat_samples": not heartbeat_samples,
+            "validation_evidence": not validation_evidence.get("applicable"),
             "capability_grants": not capability_rows,
             "capabilities_exercised": not _list_from_report(report, "capabilities_exercised"),
             "capability_escalations": not _list_from_report(report, "capability_escalations"),
+        },
+    }
+
+
+def _validation_evidence_detail(
+    repo_root: Path,
+    run_id: str,
+    run_state_dir: Path,
+    agent: dict[str, Any],
+    *,
+    report_path: Any,
+    terminal_report_present: bool,
+) -> dict[str, Any]:
+    role = str(agent.get("role") or "")
+    applicable = role in {"reviewer", "validator"}
+    diagnostics = []
+    if applicable:
+        status_payload = run_status(repo_root, run_id=run_id)
+        diagnostics = [
+            item
+            for item in status_payload.get("lifecycle_diagnostics", [])
+            if item.get("agent_id") == agent.get("agent_id")
+            and item.get("type") in {
+                "incomplete_validation_evidence",
+                "stale_validation_worker_without_report",
+            }
+        ]
+    expected_report_path = report_path
+    if not expected_report_path and applicable:
+        directory = {"reviewer": "reviews", "validator": "validation"}[role]
+        expected_report_path = str(run_state_dir / directory / f"{agent.get('agent_id')}.json")
+    return {
+        "applicable": applicable,
+        "role": role or None,
+        "expected_report_path": expected_report_path,
+        "terminal_report_present": terminal_report_present,
+        "last_heartbeat_at": agent.get("last_heartbeat_at"),
+        "lifecycle_diagnostics": diagnostics,
+        "empty_states": {
+            "terminal_report": not terminal_report_present,
+            "last_heartbeat_at": not bool(agent.get("last_heartbeat_at")),
+            "lifecycle_diagnostics": not diagnostics,
         },
     }
 

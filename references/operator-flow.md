@@ -37,10 +37,10 @@ progress or asks for decisions.
 7. Preview coordinator launch with `python3 scripts/de.py run <repo> --dry-run`; omitting `--provider` uses the default `codex` provider, while `--provider claude` is optional.
 8. Prefer `python3 scripts/de.py run <repo> --detach` from interactive Codex so the conversation can continue while status and tail are polled.
 9. Immediately after every successful interactive detached launch, create a host-layer thread heartbeat for the current thread. This is required when the host supports wakeups, and the default interval is 15 minutes.
-10. For active sessions, launch or reuse the dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available.
+10. For active sessions, launch or reuse the dashboard observer with `python3 scripts/de.py dashboard <repo> --detach --json`; open the returned `url` in the Codex in-app browser when available, and record which run id that URL observes.
 11. Configure the heartbeat to read Dispatch Engine JSON state, summarize material changes, request user input only for decisions or unrecoverable blockers, apply the four-heartbeat autonomous technical-decision fallback when allowed by interactive Codex eligibility judgment, and stop itself when `status --json` reports `completed`, `failed`, or `cancelled`.
 12. If the host cannot create a heartbeat, tell the user the detached run will not be proactively supervised and ask before continuing.
-13. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files. The dashboard is a supplementary read-only observer, not a replacement for these supervision checks. For reviewed protocol violations, use `resolve-protocol-violation` to append an audit resolution; this preserves original evidence, affects unresolved protocol-alert overlays only, and never rewrites terminal run state or future worker capability grants.
+13. Monitor status and event logs through `status --json`, `events --since`, `alerts --json`, `tail`, and `.dispatch/runs/` files. These surfaces define terminal, cancelled, stale, and superseded state. The dashboard is a supplementary read-only observer, not a replacement for these supervision checks. For reviewed protocol violations, use `resolve-protocol-violation` to append an audit resolution; this preserves original evidence, affects unresolved protocol-alert overlays only, and never rewrites terminal run state or future worker capability grants.
 14. If the user asks to stop a run, call
     `python3 scripts/de.py cancel <repo> --run-id <run-id> --reason "<reason>" --json`.
     The `stop` command is an alias for natural-language use, while `cancel`
@@ -79,6 +79,17 @@ The dashboard observer is separate from that heartbeat. It gives interactive
 Codex and the user a read-only browser view over Dispatch Engine state, but it
 does not wake the foreground chat, resolve decisions, cancel runs, or replace
 the `status --json`, `events --since`, and `alerts --json` supervision loop.
+Dashboard lifecycle is tied to the selected run id. If the run reaches
+`completed`, `failed`, or `cancelled`, leave the dashboard available only as a
+terminal historical view and stop describing it as live progress. If a
+continuation run supersedes the old run, start or reuse the dashboard for the
+new run, open or report the new URL, and explicitly call the old dashboard URL
+stale/superseded unless the user wants historical inspection. Use
+`python3 scripts/de.py dashboard <repo> --status --run-id <run-id> --json` and
+`.dispatch/runs/<run-id>/dashboard/server.json` to inspect recorded observer
+metadata before stopping an observer. Do not clean up a dashboard process unless
+the operator asked for cleanup or the metadata proves that process belongs to
+the retired run.
 
 If host wakeups are unavailable, use this wording:
 
